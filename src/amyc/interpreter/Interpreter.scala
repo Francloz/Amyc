@@ -68,51 +68,54 @@ object Interpreter extends Pipeline[(Program, SymbolTable), Unit] {
         case Variable(name) =>
           ???
         case IntLiteral(i) =>
-          ???
+          IntValue(i)
         case BooleanLiteral(b) =>
-          ???
+          BooleanValue(b)
         case StringLiteral(s) =>
-          ???
+          StringValue(s)
         case UnitLiteral() =>
-          ???
+          UnitValue
         case Plus(lhs, rhs) =>
           IntValue(interpret(lhs).asInt + interpret(rhs).asInt)
         case Minus(lhs, rhs) =>
-          ???
+          IntValue(interpret(lhs).asInt - interpret(rhs).asInt)
         case Times(lhs, rhs) =>
-          ???
+          IntValue(interpret(lhs).asInt * interpret(rhs).asInt)
         case Div(lhs, rhs) =>
-          ???
+          IntValue(interpret(lhs).asInt / interpret(rhs).asInt)
         case Mod(lhs, rhs) =>
-          ???
+          IntValue(interpret(lhs).asInt % interpret(rhs).asInt)
         case LessThan(lhs, rhs) =>
-          ???
+          BooleanValue(interpret(lhs).asInt < interpret(rhs).asInt)
         case LessEquals(lhs, rhs) =>
-          ???
+          BooleanValue(interpret(lhs).asInt <= interpret(rhs).asInt)
         case And(lhs, rhs) =>
-          ???
+          BooleanValue(interpret(lhs).asBoolean && interpret(rhs).asBoolean)
         case Or(lhs, rhs) =>
-          ???
+          BooleanValue(interpret(lhs).asBoolean || interpret(rhs).asBoolean)
         case Equals(lhs, rhs) =>
           ??? // Hint: Take care to implement Amy equality semantics
         case Concat(lhs, rhs) =>
-          ???
+          StringValue(interpret(lhs).asString ++ interpret(rhs).asString)
         case Not(e) =>
-          ???
+          BooleanValue(! interpret(e).asBoolean)
         case Neg(e) =>
-          ???
-        case Call(qname, args) =>
-          ???
+          IntegerValue(- interpret(e).asInt)
+        case Call(qname, args) => Unit
+          // if(qname.isConstructor)
           // Hint: Check if it is a call to a constructor first,
           //       then if it is a built-in function (otherwise it is a normal function).
           //       Use the helper methods provided above to retrieve information from the symbol table.
           //       Think how locals should be modified.
         case Sequence(e1, e2) =>
-          ???
+          interpret(e1); interpret(e2)
         case Let(df, value, body) =>
           ???
         case Ite(cond, thenn, elze) =>
-          ???
+          if (interpret(cond).asBoolean) 
+              interpret(thenn) 
+          else 
+              interpret(elze)
         case Match(scrut, cases) =>
           // Hint: We give you a skeleton to implement pattern matching
           //       and the main body of the implementation
@@ -126,19 +129,19 @@ object Interpreter extends Pipeline[(Program, SymbolTable), Unit] {
           def matchesPattern(v: Value, pat: Pattern): Option[List[(Identifier, Value)]] = {
             ((v, pat): @unchecked) match {
               case (_, WildcardPattern()) =>
-                ???
+                None
               case (_, IdPattern(name)) =>
                 Some(List(name -> v))
               case (IntValue(i1), LiteralPattern(IntLiteral(i2))) =>
-                ???
+                Some(List(i2 -> v))
               case (BooleanValue(b1), LiteralPattern(BooleanLiteral(b2))) =>
-                ??? 
+                Some(List(b2 -> v))
               case (StringValue(_), LiteralPattern(StringLiteral(_))) =>
-                ???
+                Some(List())
               case (UnitValue, LiteralPattern(UnitLiteral())) =>
-                ???
+                Some(List())
               case (CaseClassValue(con1, realArgs), CaseClassPattern(con2, formalArgs)) =>
-                ???
+                Some(List())
             }
           }
 
@@ -154,7 +157,7 @@ object Interpreter extends Pipeline[(Program, SymbolTable), Unit] {
           ctx.reporter.fatal(s"Match error: ${evS.toString}@${scrut.position}")
 
         case Error(msg) =>
-          ???
+          builtIns("Std", "printString")(List(interpret(msg)))
       }
     }
 
