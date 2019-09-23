@@ -10,6 +10,8 @@ abstract class ExecutionTests extends TestSuite {
 
   @Test def testEmptyObject = shouldOutput("EmptyObject")
 
+  @Test def testBinaryOps = shouldOutput("BinaryOps")
+
   @Test def testMinimalError = shouldFail("MinimalError")
 
 }

@@ -93,16 +93,27 @@ object Interpreter extends Pipeline[(Program, SymbolTable), Unit] {
           BooleanValue(interpret(lhs).asBoolean && interpret(rhs).asBoolean)
         case Or(lhs, rhs) =>
           BooleanValue(interpret(lhs).asBoolean || interpret(rhs).asBoolean)
+        
         case Equals(lhs, rhs) =>
-          ??? // Hint: Take care to implement Amy equality semantics
+          // Hint: Take care to implement Amy equality semantics
+          if(interpret(lhs) == interpret(rhs))
+            BooleanValue(true)
+          else
+            BooleanValue(false)
+          
         case Concat(lhs, rhs) =>
           StringValue(interpret(lhs).asString ++ interpret(rhs).asString)
         case Not(e) =>
           BooleanValue(! interpret(e).asBoolean)
         case Neg(e) =>
-          IntegerValue(- interpret(e).asInt)
-        case Call(qname, args) => Unit
-          // if(qname.isConstructor)
+          IntValue(- interpret(e).asInt)
+        case Call(qname, args) => 
+          ???
+          // If it is a constructor, the return type  is the parent class
+          // If it isnt a constructor, the return type is the function type
+          // Functions should be run on a different context
+          // Name is a QualifiedName, which expands Identifier
+          
           // Hint: Check if it is a call to a constructor first,
           //       then if it is a built-in function (otherwise it is a normal function).
           //       Use the helper methods provided above to retrieve information from the symbol table.
@@ -133,9 +144,9 @@ object Interpreter extends Pipeline[(Program, SymbolTable), Unit] {
               case (_, IdPattern(name)) =>
                 Some(List(name -> v))
               case (IntValue(i1), LiteralPattern(IntLiteral(i2))) =>
-                Some(List(i2 -> v))
+                Some(List())
               case (BooleanValue(b1), LiteralPattern(BooleanLiteral(b2))) =>
-                Some(List(b2 -> v))
+                Some(List())
               case (StringValue(_), LiteralPattern(StringLiteral(_))) =>
                 Some(List())
               case (UnitValue, LiteralPattern(UnitLiteral())) =>
@@ -157,7 +168,8 @@ object Interpreter extends Pipeline[(Program, SymbolTable), Unit] {
           ctx.reporter.fatal(s"Match error: ${evS.toString}@${scrut.position}")
 
         case Error(msg) =>
-          builtIns("Std", "printString")(List(interpret(msg)))
+          ctx.reporter.fatal(interpret(msg).asString)
+          //builtIns("Std", "printString")(List(interpret(msg)))
       }
     }
 
