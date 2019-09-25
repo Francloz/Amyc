@@ -66,7 +66,11 @@ object Interpreter extends Pipeline[(Program, SymbolTable), Unit] {
     def interpret(expr: Expr)(implicit locals: Map[Identifier, Value]): Value = {
       expr match {
         case Variable(name) =>
-          ???
+          (locals.find(_._1.name == name)) match 
+            { 
+                case Some(s) => s._2
+                case _ => UnitValue
+            }
         case IntLiteral(i) =>
           IntValue(i)
         case BooleanLiteral(b) =>
@@ -121,7 +125,7 @@ object Interpreter extends Pipeline[(Program, SymbolTable), Unit] {
         case Sequence(e1, e2) =>
           interpret(e1); interpret(e2)
         case Let(df, value, body) =>
-          ???
+          interpret(body)(locals + (df.name -> interpret(value)))
         case Ite(cond, thenn, elze) =>
           if (interpret(cond).asBoolean) 
               interpret(thenn) 
@@ -142,7 +146,7 @@ object Interpreter extends Pipeline[(Program, SymbolTable), Unit] {
               case (_, WildcardPattern()) =>
                 None
               case (_, IdPattern(name)) =>
-                Some(List(name -> v))
+                Some(List())
               case (IntValue(i1), LiteralPattern(IntLiteral(i2))) =>
                 Some(List())
               case (BooleanValue(b1), LiteralPattern(BooleanLiteral(b2))) =>
