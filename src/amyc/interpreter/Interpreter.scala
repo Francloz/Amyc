@@ -66,11 +66,7 @@ object Interpreter extends Pipeline[(Program, SymbolTable), Unit] {
     def interpret(expr: Expr)(implicit locals: Map[Identifier, Value]): Value = {
       expr match {
         case Variable(name) =>
-          (locals.find(_._1.name == name)) match 
-            { 
-                case Some(s) => s._2
-                case _ => UnitValue
-            }
+          locals(name)
         case IntLiteral(i) =>
           IntValue(i)
         case BooleanLiteral(b) =>
@@ -100,11 +96,13 @@ object Interpreter extends Pipeline[(Program, SymbolTable), Unit] {
         
         case Equals(lhs, rhs) =>
           // Hint: Take care to implement Amy equality semantics
-          if(interpret(lhs) == interpret(rhs))
-            BooleanValue(true)
-          else
-            BooleanValue(false)
-          
+          (interpret(lhs), interpret(rhs)) match {
+            case (BooleanValue(b1),BooleanValue(b2)) => BooleanValue(b1==b2)
+            case (IntValue(i1),IntValue(i2)) => BooleanValue(i1==i2)
+            case (StringValue(str1),StringValue(str2)) => BooleanValue(str1==str2)
+            case (UnitValue,UnitValue) => BooleanValue(true)
+            case _ => BooleanValue(false)
+          }
         case Concat(lhs, rhs) =>
           StringValue(interpret(lhs).asString ++ interpret(rhs).asString)
         case Not(e) =>
@@ -112,25 +110,34 @@ object Interpreter extends Pipeline[(Program, SymbolTable), Unit] {
         case Neg(e) =>
           IntValue(- interpret(e).asInt)
         case Call(qname, args) => 
-          ???
-          // If it is a constructor, the return type  is the parent class
-          // If it isnt a constructor, the return type is the function type
-          // Functions should be run on a different context
-          // Name is a QualifiedName, which expands Identifier
-          
-          // Hint: Check if it is a call to a constructor first,
-          //       then if it is a built-in function (otherwise it is a normal function).
-          //       Use the helper methods provided above to retrieve information from the symbol table.
-          //       Think how locals should be modified.
+          if(isConstructor(qname))
+          {
+            val  argList = for(arg <- args) yield interpret(arg);
+            CaseClassValue(qname,argList)
+          }
+          else if(builtIns.exists(_ == (findFunctionOwner(qname),qname.name))){ 
+            val  argList = for(arg <- args) yield interpret(arg);
+            val opt = builtIns.get(findFunctionOwner(qname),qname.name)
+            opt.head(argList)
+          }
+          else
+          {
+            // normal function
+            val fd = findFunction(findFunctionOwner(qname),qname.name);
+            val  argList = for(arg <- args) yield interpret(arg);
+            val  identList = for(param <- fd.params) yield param.name;
+            val loc = (identList zip argList).toMap;
+            interpret(fd.body)(loc)
+          }
         case Sequence(e1, e2) =>
           interpret(e1); interpret(e2)
         case Let(df, value, body) =>
           interpret(body)(locals + (df.name -> interpret(value)))
         case Ite(cond, thenn, elze) =>
           if (interpret(cond).asBoolean) 
-              interpret(thenn) 
+              {interpret(thenn)} 
           else 
-              interpret(elze)
+              {interpret(elze)}
         case Match(scrut, cases) =>
           // Hint: We give you a skeleton to implement pattern matching
           //       and the main body of the implementation
@@ -144,19 +151,20 @@ object Interpreter extends Pipeline[(Program, SymbolTable), Unit] {
           def matchesPattern(v: Value, pat: Pattern): Option[List[(Identifier, Value)]] = {
             ((v, pat): @unchecked) match {
               case (_, WildcardPattern()) =>
-                None
+                Some(List())
               case (_, IdPattern(name)) =>
-                Some(List())
+                Some(List(name -> v))
               case (IntValue(i1), LiteralPattern(IntLiteral(i2))) =>
-                Some(List())
+                if(i1 == i2) Some(List()) else None
               case (BooleanValue(b1), LiteralPattern(BooleanLiteral(b2))) =>
                 Some(List())
               case (StringValue(_), LiteralPattern(StringLiteral(_))) =>
-                Some(List())
+                None
               case (UnitValue, LiteralPattern(UnitLiteral())) =>
                 Some(List())
               case (CaseClassValue(con1, realArgs), CaseClassPattern(con2, formalArgs)) =>
-                Some(List())
+                val list = ((for(x <- realArgs.zip(formalArgs)) yield matchesPattern(x._1,x._2))).flatten.flatten
+                if(con1 == con2 && !list.exists(x => x == None)) Some(list) else None
             }
           }
 
