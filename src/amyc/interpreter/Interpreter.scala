@@ -62,8 +62,6 @@ object Interpreter extends Pipeline[(Program, SymbolTable), Unit] {
       }.get
     }
 
-    // Interprets a function, using evaluations for local variables contained in 'locals'
-    // TODO: Complete all missing cases. Look at the given ones for guidance.
     def interpret(expr: Expr)(implicit locals: Map[Identifier, Value]): Value = {
       expr match {
         case Variable(name) =>
@@ -95,7 +93,6 @@ object Interpreter extends Pipeline[(Program, SymbolTable), Unit] {
         case Or(lhs, rhs) =>
           BooleanValue(interpret(lhs).asBoolean || interpret(rhs).asBoolean)
         case Equals(lhs, rhs) =>
-          // Hint: Take care to implement Amy equality semantics
           (interpret(lhs), interpret(rhs)) match {
             case (BooleanValue(b1),BooleanValue(b2)) => BooleanValue(b1==b2)
             case (IntValue(i1),IntValue(i2)) => BooleanValue(i1==i2)
@@ -114,20 +111,16 @@ object Interpreter extends Pipeline[(Program, SymbolTable), Unit] {
 
           if(isConstructor(qname))
           {
-            //ctx.reporter.fatal(qname.toString ++ "is constructor")
             val  argList = for(arg <- args) yield interpret(arg);
             CaseClassValue(qname,argList)
           }
           else if(builtIns.exists(_._1 == (findFunctionOwner(qname),qname.name))){ 
-            //ctx.reporter.fatal(qname.toString ++ "is builtin")
             val  argList = for(arg <- args) yield interpret(arg);
             val opt = builtIns.get(findFunctionOwner(qname),qname.name)
             opt.head(argList)
           }
           else
           {
-            //ctx.reporter.fatal(qname.toString ++ "is else  because it" ++ (findFunctionOwner(qname),qname.name).toString ++ "is not in" ++ builtIns.toString)
-            // normal function
             val fd = findFunction(findFunctionOwner(qname),qname.name);
             val  argList = for(arg <- args) yield interpret(arg);
             val  identList = for(param <- fd.params) yield param.name;
@@ -141,11 +134,7 @@ object Interpreter extends Pipeline[(Program, SymbolTable), Unit] {
         case Ite(cond, thenn, elze) =>
           if (interpret(cond).asBoolean) interpret(thenn) else interpret(elze)
         case Match(scrut, cases) =>
-          // Hint: We give you a skeleton to implement pattern matching
-          //       and the main body of the implementation
-
           val evS = interpret(scrut)
-
           // Returns a list of pairs id -> value,
           // where id has been bound to value within the pattern.
           // Returns None when the pattern fails to match.
@@ -165,7 +154,6 @@ object Interpreter extends Pipeline[(Program, SymbolTable), Unit] {
               case (UnitValue, LiteralPattern(UnitLiteral())) =>
                 Some(List())
               case (CaseClassValue(con1, realArgs), CaseClassPattern(con2, formalArgs)) =>
-                //list[Option[List[(Identifier, Value)]]]
                 val list = (for(x <- realArgs.zip(formalArgs) if  matchesPattern(x._1,x._2).isDefined) yield matchesPattern(x._1,x._2).get).flatten
                 if(con1 == con2 && realArgs.length == list.length) Some(list) else None
             }
@@ -184,7 +172,6 @@ object Interpreter extends Pipeline[(Program, SymbolTable), Unit] {
 
         case Error(msg) =>
           ctx.reporter.fatal(interpret(msg).asString)
-          //builtIns("Std", "printString")(List(interpret(msg)))
       }
     }
 

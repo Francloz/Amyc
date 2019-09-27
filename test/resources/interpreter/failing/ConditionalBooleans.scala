@@ -1,4 +1,5 @@
 object ConditionalBooleans {
   if((true && false) || true)
-    error("")
+    if(!(true && (true && false)))
+      error("")
 }
