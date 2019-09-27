@@ -5,6 +5,7 @@ import utils._
 import ast.SymbolicTreeModule._
 import ast.Identifier
 import analyzer.SymbolTable
+import java.io._
 
 // An interpreter for Amy programs, implemented in Scala
 object Interpreter extends Pipeline[(Program, SymbolTable), Unit] {
@@ -93,7 +94,6 @@ object Interpreter extends Pipeline[(Program, SymbolTable), Unit] {
           BooleanValue(interpret(lhs).asBoolean && interpret(rhs).asBoolean)
         case Or(lhs, rhs) =>
           BooleanValue(interpret(lhs).asBoolean || interpret(rhs).asBoolean)
-        
         case Equals(lhs, rhs) =>
           // Hint: Take care to implement Amy equality semantics
           (interpret(lhs), interpret(rhs)) match {
@@ -110,18 +110,23 @@ object Interpreter extends Pipeline[(Program, SymbolTable), Unit] {
         case Neg(e) =>
           IntValue(- interpret(e).asInt)
         case Call(qname, args) => 
+          
+
           if(isConstructor(qname))
           {
+            //ctx.reporter.fatal(qname.toString ++ "is constructor")
             val  argList = for(arg <- args) yield interpret(arg);
             CaseClassValue(qname,argList)
           }
-          else if(builtIns.exists(_ == (findFunctionOwner(qname),qname.name))){ 
+          else if(builtIns.exists(_._1 == (findFunctionOwner(qname),qname.name))){ 
+            //ctx.reporter.fatal(qname.toString ++ "is builtin")
             val  argList = for(arg <- args) yield interpret(arg);
             val opt = builtIns.get(findFunctionOwner(qname),qname.name)
             opt.head(argList)
           }
           else
           {
+            //ctx.reporter.fatal(qname.toString ++ "is else  because it" ++ (findFunctionOwner(qname),qname.name).toString ++ "is not in" ++ builtIns.toString)
             // normal function
             val fd = findFunction(findFunctionOwner(qname),qname.name);
             val  argList = for(arg <- args) yield interpret(arg);
@@ -134,10 +139,7 @@ object Interpreter extends Pipeline[(Program, SymbolTable), Unit] {
         case Let(df, value, body) =>
           interpret(body)(locals + (df.name -> interpret(value)))
         case Ite(cond, thenn, elze) =>
-          if (interpret(cond).asBoolean) 
-              {interpret(thenn)} 
-          else 
-              {interpret(elze)}
+          if (interpret(cond).asBoolean) interpret(thenn) else interpret(elze)
         case Match(scrut, cases) =>
           // Hint: We give you a skeleton to implement pattern matching
           //       and the main body of the implementation
@@ -163,15 +165,16 @@ object Interpreter extends Pipeline[(Program, SymbolTable), Unit] {
               case (UnitValue, LiteralPattern(UnitLiteral())) =>
                 Some(List())
               case (CaseClassValue(con1, realArgs), CaseClassPattern(con2, formalArgs)) =>
-                val list = ((for(x <- realArgs.zip(formalArgs)) yield matchesPattern(x._1,x._2))).flatten.flatten
-                if(con1 == con2 && !list.exists(x => x == None)) Some(list) else None
+                //list[Option[List[(Identifier, Value)]]]
+                val list = (for(x <- realArgs.zip(formalArgs) if  matchesPattern(x._1,x._2).isDefined) yield matchesPattern(x._1,x._2).get).flatten
+                if(con1 == con2 && realArgs.length == list.length) Some(list) else None
             }
           }
 
           // Main "loop" of the implementation: Go through every case,
           // check if the pattern matches, and if so return the evaluation of the case expression
           for {
-             MatchCase(pat, rhs) <- cases
+            MatchCase(pat, rhs) <- cases
             moreLocals <- matchesPattern(evS, pat)
           } {
             return interpret(rhs)(locals ++ moreLocals)
