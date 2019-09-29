@@ -4,9 +4,9 @@ lazy val amyc = (project in file("."))
   .settings(
     name := "amyc",
 
-    version := "1.5",
+    version := "1.6",
     organization := "ch.epfl.lara",
-    scalaVersion := "2.12.3",
+    scalaVersion := "2.12.10",
 
     scalaSource in Compile := baseDirectory.value / "src",
     scalacOptions ++= Seq("-feature"),

@@ -107,22 +107,18 @@ object Interpreter extends Pipeline[(Program, SymbolTable), Unit] {
         case Neg(e) =>
           IntValue(- interpret(e).asInt)
         case Call(qname, args) => 
-          
-
+          val  argList = for(arg <- args) yield interpret(arg);
           if(isConstructor(qname))
           {
-            val  argList = for(arg <- args) yield interpret(arg);
             CaseClassValue(qname,argList)
           }
           else if(builtIns.exists(_._1 == (findFunctionOwner(qname),qname.name))){ 
-            val  argList = for(arg <- args) yield interpret(arg);
             val opt = builtIns.get(findFunctionOwner(qname),qname.name)
             opt.head(argList)
           }
           else
           {
             val fd = findFunction(findFunctionOwner(qname),qname.name);
-            val  argList = for(arg <- args) yield interpret(arg);
             val  identList = for(param <- fd.params) yield param.name;
             val loc = (identList zip argList).toMap;
             interpret(fd.body)(loc)
@@ -155,7 +151,12 @@ object Interpreter extends Pipeline[(Program, SymbolTable), Unit] {
                 Some(List())
               case (CaseClassValue(con1, realArgs), CaseClassPattern(con2, formalArgs)) =>
                 val list = (for(x <- realArgs.zip(formalArgs) if  matchesPattern(x._1,x._2).isDefined) yield matchesPattern(x._1,x._2).get).flatten
-                if(con1 == con2 && realArgs.length == list.length) Some(list) else None
+                if(con1 == con2 && realArgs.length == list.length) 
+                  Some(list) 
+                else 
+                  // builtIns.get("Std","printString").head(List(StringValue(realArgs.toString)));
+                  // builtIns.get("Std","printString").head(List(StringValue(formalArgs.toString)));
+                  None
             }
           }
 
