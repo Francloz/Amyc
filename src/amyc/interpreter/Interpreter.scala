@@ -131,14 +131,11 @@ object Interpreter extends Pipeline[(Program, SymbolTable), Unit] {
           if (interpret(cond).asBoolean) interpret(thenn) else interpret(elze)
         case Match(scrut, cases) =>
           val evS = interpret(scrut)
-          // Returns a list of pairs id -> value,
-          // where id has been bound to value within the pattern.
-          // Returns None when the pattern fails to match.
-          // Note: Only works on well typed patterns (which have been ensured by the type checker).
           def matchesPattern(v: Value, pat: Pattern): Option[List[(Identifier, Value)]] = {
+            builtIns.get("Std","printString").head(List(StringValue("Trying to match: " ++ v.toString ++ " and " ++ pat.toString)));
             ((v, pat): @unchecked) match {
               case (_, WildcardPattern()) =>
-                Some(List())
+                Some(List())}
               case (_, IdPattern(name)) =>
                 Some(List(name -> v))
               case (IntValue(i1), LiteralPattern(IntLiteral(i2))) =>
@@ -150,13 +147,9 @@ object Interpreter extends Pipeline[(Program, SymbolTable), Unit] {
               case (UnitValue, LiteralPattern(UnitLiteral())) =>
                 Some(List())
               case (CaseClassValue(con1, realArgs), CaseClassPattern(con2, formalArgs)) =>
-                val list = (for(x <- realArgs.zip(formalArgs) if  matchesPattern(x._1,x._2).isDefined) yield matchesPattern(x._1,x._2).get).flatten
-                if(con1 == con2 && realArgs.length == list.length) 
-                  Some(list) 
-                else 
-                  // builtIns.get("Std","printString").head(List(StringValue(realArgs.toString)));
-                  // builtIns.get("Std","printString").head(List(StringValue(formalArgs.toString)));
-                  None
+                val aux_list = for(x <- realArgs.zip(formalArgs)) yield matchesPattern(x._1,x._2);
+                val list = (for(x <- aux_list if x.isDefined) yield x).flatten.flatten;
+                if(con1 == con2 && !aux_list.exists(e => !e.isDefined)) Some(list) else None 
             }
           }
 
