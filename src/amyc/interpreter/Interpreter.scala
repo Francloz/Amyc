@@ -96,9 +96,8 @@ object Interpreter extends Pipeline[(Program, SymbolTable), Unit] {
           (interpret(lhs), interpret(rhs)) match {
             case (BooleanValue(b1),BooleanValue(b2)) => BooleanValue(b1==b2)
             case (IntValue(i1),IntValue(i2)) => BooleanValue(i1==i2)
-            case (StringValue(str1),StringValue(str2)) => BooleanValue(str1==str2)
             case (UnitValue,UnitValue) => BooleanValue(true)
-            case _ => BooleanValue(false)
+            case (h,t) => BooleanValue(h eq t)
           }
         case Concat(lhs, rhs) =>
           StringValue(interpret(lhs).asString ++ interpret(rhs).asString)
@@ -131,11 +130,15 @@ object Interpreter extends Pipeline[(Program, SymbolTable), Unit] {
           if (interpret(cond).asBoolean) interpret(thenn) else interpret(elze)
         case Match(scrut, cases) =>
           val evS = interpret(scrut)
+          // Returns a list of pairs id -> value,
+          // where id has been bound to value within the pattern.
+          // Returns None when the pattern fails to match.
+          // Note: Only works on well typed patterns (which have been ensured by the type checker).
           def matchesPattern(v: Value, pat: Pattern): Option[List[(Identifier, Value)]] = {
             builtIns.get("Std","printString").head(List(StringValue("Trying to match: " ++ v.toString ++ " and " ++ pat.toString)));
             ((v, pat): @unchecked) match {
               case (_, WildcardPattern()) =>
-                Some(List())}
+                Some(List())
               case (_, IdPattern(name)) =>
                 Some(List(name -> v))
               case (IntValue(i1), LiteralPattern(IntLiteral(i2))) =>
