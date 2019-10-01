@@ -139,7 +139,7 @@ object Interpreter extends Pipeline[(Program, SymbolTable), Unit] {
         case Match(scrut, cases) =>
           val evS = interpret(scrut)
           def matchesPattern(v: Value, pat: Pattern): Option[List[(Identifier, Value)]] = {
-            builtIns.get("Std","printString").head(List(StringValue("Trying to match: " ++ v.toString ++ " and " ++ pat.toString)));
+            //builtIns.get("Std","printString").head(List(StringValue("Trying to match: " ++ v.toString ++ " and " ++ pat.toString)));
             ((v, pat): @unchecked) match {
               case (_, WildcardPattern()) =>
                 Some(List())
