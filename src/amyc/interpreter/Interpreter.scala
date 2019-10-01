@@ -58,7 +58,7 @@ object Interpreter extends Pipeline[(Program, SymbolTable), Unit] {
     def findFunctionOwner(functionName: Identifier) = table.getFunction(functionName).get.owner.name
     def findFunction(owner: String, name: String) = {
       program.modules.find(_.name.name == owner).get.defs.collectFirst {
-        case fd@FunDef(fn, _, _, _) if fn.name == name => fd
+        case function@FunDef(fn, _, _, _) if fn.name == name => function
       }.get
     }
 
@@ -83,13 +83,13 @@ object Interpreter extends Pipeline[(Program, SymbolTable), Unit] {
         case Div(lhs, rhs) =>
           val divisor : Int = interpret(rhs).asInt;
           if(divisor == 0)
-          ctx.reporter.fatal("Division by 0")
+          ctx.reporter.fatal("Division by 0.")
           else
             IntValue(interpret(lhs).asInt / divisor)
         case Mod(lhs, rhs) =>
           val divisor : Int = interpret(rhs).asInt;
           if(divisor == 0)
-            ctx.reporter.fatal("Division by 0")
+            ctx.reporter.fatal("Division by 0.")
           else
             IntValue(interpret(lhs).asInt % divisor)
         case LessThan(lhs, rhs) =>
@@ -114,21 +114,21 @@ object Interpreter extends Pipeline[(Program, SymbolTable), Unit] {
         case Neg(e) =>
           IntValue(- interpret(e).asInt)
         case Call(qname, args) => 
-          val  argList = for(arg <- args) yield interpret(arg);
+          val  interpretedArgs = for(arg <- args) yield interpret(arg);
           if(isConstructor(qname))
           {
-            CaseClassValue(qname,argList)
+            CaseClassValue(qname,interpretedArgs)
           }
-          else if(builtIns.exists(_._1 == (findFunctionOwner(qname),qname.name))){ 
-            val opt = builtIns.get(findFunctionOwner(qname),qname.name)
-            opt.head(argList)
+          else if(builtIns.exists(_._1 == (findFunctionOwner(qname),qname.name)))
+          { 
+            builtIns.get(findFunctionOwner(qname),qname.name).head(interpretedArgs)
           }
           else
           {
-            val fd = findFunction(findFunctionOwner(qname),qname.name);
-            val  identList = for(param <- fd.params) yield param.name;
-            val loc = (identList zip argList).toMap;
-            interpret(fd.body)(loc)
+            val function = findFunction(findFunctionOwner(qname),qname.name);
+            val idList = for(param <- function.params) yield param.name;
+            val newLocals = (idList zip interpretedArgs).toMap;
+            interpret(function.body)(newLocals)
           }
         case Sequence(e1, e2) =>
           interpret(e1); interpret(e2)
@@ -139,7 +139,6 @@ object Interpreter extends Pipeline[(Program, SymbolTable), Unit] {
         case Match(scrut, cases) =>
           val evS = interpret(scrut)
           def matchesPattern(v: Value, pat: Pattern): Option[List[(Identifier, Value)]] = {
-            //builtIns.get("Std","printString").head(List(StringValue("Trying to match: " ++ v.toString ++ " and " ++ pat.toString)));
             ((v, pat): @unchecked) match {
               case (_, WildcardPattern()) =>
                 Some(List())
@@ -148,15 +147,14 @@ object Interpreter extends Pipeline[(Program, SymbolTable), Unit] {
               case (IntValue(i1), LiteralPattern(IntLiteral(i2))) =>
                 if(i1 == i2) Some(List()) else None
               case (BooleanValue(b1), LiteralPattern(BooleanLiteral(b2))) =>
-                Some(List())
+                if(b1 == b2) Some(List()) else None
               case (StringValue(_), LiteralPattern(StringLiteral(_))) =>
                 None
               case (UnitValue, LiteralPattern(UnitLiteral())) =>
                 Some(List())
               case (CaseClassValue(con1, realArgs), CaseClassPattern(con2, formalArgs)) =>
-                val aux_list = for(x <- realArgs.zip(formalArgs)) yield matchesPattern(x._1,x._2);
-                val list = (for(x <- aux_list if x.isDefined) yield x).flatten.flatten;
-                if(con1 == con2 && !aux_list.exists(e => !e.isDefined)) Some(list) else None 
+                val match_list = for(x <- realArgs.zip(formalArgs)) yield matchesPattern(x._1,x._2);
+                if(con1 == con2 && !match_list.exists(e => !e.isDefined)) Some(match_list.flatten.flatten) else None 
             }
           }
 
