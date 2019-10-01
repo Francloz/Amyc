@@ -81,9 +81,17 @@ object Interpreter extends Pipeline[(Program, SymbolTable), Unit] {
         case Times(lhs, rhs) =>
           IntValue(interpret(lhs).asInt * interpret(rhs).asInt)
         case Div(lhs, rhs) =>
-          IntValue(interpret(lhs).asInt / interpret(rhs).asInt)
+          val divisor : Int = interpret(rhs).asInt;
+          if(divisor == 0)
+          ctx.reporter.fatal("Division by 0")
+          else
+            IntValue(interpret(lhs).asInt / divisor)
         case Mod(lhs, rhs) =>
-          IntValue(interpret(lhs).asInt % interpret(rhs).asInt)
+          val divisor : Int = interpret(rhs).asInt;
+          if(divisor == 0)
+            ctx.reporter.fatal("Division by 0")
+          else
+            IntValue(interpret(lhs).asInt % divisor)
         case LessThan(lhs, rhs) =>
           BooleanValue(interpret(lhs).asInt < interpret(rhs).asInt)
         case LessEquals(lhs, rhs) =>
@@ -130,10 +138,6 @@ object Interpreter extends Pipeline[(Program, SymbolTable), Unit] {
           if (interpret(cond).asBoolean) interpret(thenn) else interpret(elze)
         case Match(scrut, cases) =>
           val evS = interpret(scrut)
-          // Returns a list of pairs id -> value,
-          // where id has been bound to value within the pattern.
-          // Returns None when the pattern fails to match.
-          // Note: Only works on well typed patterns (which have been ensured by the type checker).
           def matchesPattern(v: Value, pat: Pattern): Option[List[(Identifier, Value)]] = {
             builtIns.get("Std","printString").head(List(StringValue("Trying to match: " ++ v.toString ++ " and " ++ pat.toString)));
             ((v, pat): @unchecked) match {
