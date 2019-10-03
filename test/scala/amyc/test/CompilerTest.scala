@@ -28,7 +28,7 @@ abstract class CompilerTest extends TestUtils {
         s.startsWith("[Warning]") ||
         s.startsWith("[ Error ]") ||
         s.startsWith("[ Fatal ]")
-    def filtered(s: String) = s.lines.filterNot(rejectLine).mkString("\n")
+    def filtered(s: String) = s.linesIterator.filterNot(rejectLine).mkString("\n")
     val filteredOutput = filtered(output)
     val filteredExpected = filtered(expected)
     if (filteredOutput != filteredExpected) {

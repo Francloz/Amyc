@@ -9,10 +9,6 @@ abstract class ExecutionTests extends TestSuite {
   val outputExt = "txt"
 
   @Test def testEmptyObject = shouldOutput("EmptyObject")
-  
-  @Test def testConditionalBooleans = shouldFail("ConditionalBooleans")
-
-  @Test def testDivisionBy0 = shouldFail("Division")
 
   @Test def testMinimalError = shouldFail("MinimalError")
 
