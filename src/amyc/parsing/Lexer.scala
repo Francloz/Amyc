@@ -59,29 +59,55 @@ object Lexer extends Pipeline[List[File], Iterator[Token]]
     word("val") | word("error") | word("_")
       |> { (cs, range) => KeywordToken(cs.mkString).setPos(range._1) },
 
-    // TODO: Primitive type names
+    // Primitive type names
+    word("String") | word("Int") | word("Boolean") |
+    word("Unit") |> { (cs, range) => PrimTypeToken(cs.mkString).setPos(range._1) },
 
-    // TODO: Boolean literals
+    // Boolean literals
+    word("true") | word("false") |> { (cs, range) => BoolLitToken(cs.mkString.toBoolean).setPos(range._1) },
 
-    // TODO: Operators
-    // NOTE: You can use `oneof("abc")` as a shortcut for `word("a") | word("b") | word("c")`
+    // Operators
+    // +  -  *  / %  <  <= && ||  ==  ++ -  !
+    word(">=") | word("<=") | word("==") |
+    word("++") | word("&&") | word("||") 
+    | oneOf("*+-/%<>") |> { (cs, range) => OperatorToken(cs.mkString).setPos(range._1) },
+    
+    // Identifiers
+    // alpha alphanum*
+    oneOf("qwertyuiopasdfghjklzxcvbnmQWERTYUIOPASDFGHJKLZXCVBNM") ~
+    many(oneOf("qwertyuiopasdfghjklzxcvbnmQWERTYUIOPASDFGHJKLZXCVBNM1234567890_"))
+    |> { (cs, range) => IdentifierToken(cs.mkString).setPos(range._1) },
 
-    // TODO: Identifiers
+    // Integer literals
+    many1(oneOf("1234567890")) 
+    |> { (cs, range) => if (cs.mkString.toInt > 2147483647) IntLitToken(cs.mkString.toInt).setPos(range._1) else ErrorToken("Bit overflow").setPos(range._1) },
 
-    // TODO: Integer literals
-    // NOTE: Make sure to handle invalid (e.g. overflowing) integer values safely by
-    //       emitting an ErrorToken instead.
-
-    // TODO: String literals
-
-    // TODO: Delimiters and whitespace
+    // String literals
+    // All characters except "
+    elem('\"') ~ many(oneOf("0123456789qwertyuiopasdfghjklzxcvbnmABCDEFGHIJKLMNOPQRSTUVWXYZ!#$%&'()*+,-./:;<=>?@[\\]^_`{|}~ ")) 
+    ~ elem('\"') |> { (cs, range) => StringLitToken(cs.mkString).setPos(range._1) },
+    
+    // Delimiters and whitespace
+    // White spaces
+    many1(elem(' ')) |>  { (cs, range) => SpaceToken().setPos(range._1) },
+    // Delimiters .,:;(){}[]= and =>
+    word("=>") | oneOf(".,:;(){}[]=") |>  { (cs, range) => DelimiterToken(cs.mkString).setPos(range._1) },
 
     // Single line comments
     word("//") ~ many(elem(_ != '\n'))
       |> { cs => CommentToken(cs.mkString("")) },
 
-    // TODO: Multiline comments
-    // NOTE: Amy does not support nested multi-line comments (e.g. `/* foo /* bar */ */`).
+    // Multiline comments
+    // Find nested comments
+    word("/*") ~ many(oneOf("0123456789qwertyuiopasdfghjklzxcvbnmABCDEFGHIJKLMNOPQRSTUVWXYZ!#$%&'()*+,-./:;<=>?@[\\]^_`{|}~ ")) 
+    ~ word("/*") |>  { (cs, range) => ErrorToken("Nested comment").setPos(range._1) },
+    // Find proper comments
+    word("/*") ~ many(oneOf("0123456789qwertyuiopasdfghjklzxcvbnmABCDEFGHIJKLMNOPQRSTUVWXYZ!#$%&'()*+,-./:;<=>?@[\\]^_`{|}~ ")) 
+    ~ word("*/") |>  { (cs, range) => CommentToken(cs.mkString).setPos(range._1) },
+    // Find unclosed comments
+    word("/*") ~ many(oneOf("0123456789qwertyuiopasdfghjklzxcvbnmABCDEFGHIJKLMNOPQRSTUVWXYZ!#$%&'()*+,-./:;<=>?@[\\]^_`{|}~ ")) 
+    |>  { (cs, range) => ErrorToken("Unclosed comment").setPos(range._1) },
+
     //       Make sure that unclosed multi-line comments result in an ErrorToken.
   ) onError {
     // We also emit ErrorTokens for Scallion-handled errors.
@@ -97,9 +123,13 @@ object Lexer extends Pipeline[List[File], Iterator[Token]]
     for (file <- files) {
       val source = Source.fromFile(file, SourcePositioner(file))
       it ++= lexer.spawn(source).filter {
-        token =>
-          // TODO: Remove all whitespace and comment tokens
-          ???
+        token => 
+          // Remove all whitespace and comment tokens
+          token match {
+            case CommentToken(c) => false
+            case SpaceToken() => false
+            case _ => true
+          }
       }.map {
         case token@ErrorToken(error) => ctx.reporter.fatal("Unknown token at " + token.position + ": " + error)
         case token => token
