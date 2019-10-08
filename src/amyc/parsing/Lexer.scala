@@ -70,7 +70,7 @@ object Lexer extends Pipeline[List[File], Iterator[Token]]
     // +  -  *  / %  <  <= && ||  ==  ++ -  !
     word(">=") | word("<=") | word("==") |
     word("++") | word("&&") | word("||") 
-    | oneOf("*+-/%<>") |> { (cs, range) => OperatorToken(cs.mkString).setPos(range._1) },
+    | oneOf("*+-/%<>!") |> { (cs, range) => OperatorToken(cs.mkString).setPos(range._1) },
     
     // Identifiers
     // alpha alphanum*
@@ -84,8 +84,8 @@ object Lexer extends Pipeline[List[File], Iterator[Token]]
 
     // String literals
     // All characters except "
-    elem('\"') ~ many(oneOf("0123456789qwertyuiopasdfghjklzxcvbnmABCDEFGHIJKLMNOPQRSTUVWXYZ!#$%&'()*+,-./:;<=>?@[\\]^_`{|}~ \n\r")) 
-    ~ elem('\"') |> { (cs, range) => StringLitToken(cs.mkString).setPos(range._1) },
+    elem('\"') ~ many(elem(_ != '\"')) 
+    ~ elem('\"') |> { (cs, range) => StringLitToken(cs.mkString.slice(1, cs.mkString.length - 1)).setPos(range._1) },
     
     // Delimiters and whitespace
     // White spaces
@@ -103,18 +103,18 @@ object Lexer extends Pipeline[List[File], Iterator[Token]]
     // "/*" ~ ( many(anyChar \ {"/", "*"}) 
     //          | many1("/") ~ anyChar
     //          | many1("*") ~ anyChar ) ~ many1("/") ~ "*"
-    word("/*") ~ many(oneOf("0123456789qwertyuiopasdfghjklzxcvbnmABCDEFGHIJKLMNOPQRSTUVWXYZ!#$%&'()+,-.:;<=>?@[]^_`{|}~ \n\r\\") 
-    | (many1(word("/"))  ~  oneOf("0123456789qwertyuiopasdfghjklzxcvbnmABCDEFGHIJKLMNOPQRSTUVWXYZ!#$%&'()+,-.:;<=>?@[]^_`{|}~ \n\r\\")) 
-    | (many1(word("*"))  ~  oneOf("0123456789qwertyuiopasdfghjklzxcvbnmABCDEFGHIJKLMNOPQRSTUVWXYZ!#$%&'()+,-.:;<=>?@[]^_`{|}~ \n\r\\"))) 
+    word("/*") ~ many(elem(x => x != '/' && x != '*')
+    | (many1(word("/"))  ~  elem(x => x != '/' && x != '*')) 
+    | (many1(word("*"))  ~  elem(x => x != '/' && x != '*'))) 
     ~ (many1(oneOf("/")) ~ word("*")) |>  { (cs, range) => ErrorToken("Nested comment").setPos(range._1) },
     
     // Find proper comments
     // "/*" ~ ( many(anyChar \ {"/", "*"}) 
     //          | many1("/") ~ anyChar
     //          | many1("*") ~ anyChar ) ~ many1("*") ~ "/"
-    word("/*") ~ many(oneOf("0123456789qwertyuiopasdfghjklzxcvbnmABCDEFGHIJKLMNOPQRSTUVWXYZ!#$%&'()+,-.:;<=>?@[]^_`{|}~ \n\r\\") 
-    | (many1(word("/"))  ~  oneOf("0123456789qwertyuiopasdfghjklzxcvbnmABCDEFGHIJKLMNOPQRSTUVWXYZ!#$%&'()+,-.:;<=>?@[]^_`{|}~ \n\r\\")) 
-    | (many1(word("*"))  ~  oneOf("0123456789qwertyuiopasdfghjklzxcvbnmABCDEFGHIJKLMNOPQRSTUVWXYZ!#$%&'()+,-.:;<=>?@[]^_`{|}~ \n\r\\"))) 
+    word("/*") ~ many(elem(x => x != '/' && x != '*')
+    | (many1(word("/"))  ~  elem(x => x != '/' && x != '*')) 
+    | (many1(word("*"))  ~  elem(x => x != '/' && x != '*'))) 
     ~ (many1(oneOf("*")) ~ word("/")) |>  { (cs, range) => CommentToken(cs.mkString).setPos(range._1) },
     
     // Find unclosed comments
