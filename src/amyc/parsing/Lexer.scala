@@ -9,6 +9,8 @@ import scallion.input._
 
 import amyc.utils.Position
 
+import scala.math.BigInt
+
 // The lexer for Amy.
 object Lexer extends Pipeline[List[File], Iterator[Token]]
                 with Lexers[Token, Char, SourcePosition] {
@@ -80,13 +82,15 @@ object Lexer extends Pipeline[List[File], Iterator[Token]]
 
     // Integer literals
     many1(oneOf("1234567890")) 
-    |> { (cs, range) => if (cs.mkString.toInt <= 2147483647) IntLitToken(cs.mkString.toInt).setPos(range._1) else ErrorToken("Bit overflow").setPos(range._1) },
+    |> { (cs, range) => if (cs.mkString.length < 10 && BigInt(cs.mkString) <= 2147483647) IntLitToken(cs.mkString.toInt).setPos(range._1) else ErrorToken("Int overflow (the maximum integer is 2147483647): " ++ cs.mkString).setPos(range._1) },
 
     // String literals
     // All characters except "
-    elem('\"') ~ many(elem(_ != '\"')) 
-    ~ elem('\"') |> { (cs, range) => StringLitToken(cs.mkString.slice(1, cs.mkString.length - 1)).setPos(range._1) },
+    elem('\"') ~ many(elem(_ != '\"')) ~ elem('\"') |> { (cs, range) => StringLitToken(cs.mkString.slice(1, cs.mkString.length - 1)).setPos(range._1) },
+    // Unclosed string
+    elem('\"') ~ many(elem(_ != '\"')) |> { (cs, range) => ErrorToken(cs.mkString.slice(1, cs.mkString.length - 1)).setPos(range._1) },
     
+
     // Delimiters and whitespace
     // White spaces
     many1(oneOf(" \n\r")) |>  { (cs, range) => SpaceToken().setPos(range._1) },
@@ -106,7 +110,7 @@ object Lexer extends Pipeline[List[File], Iterator[Token]]
     word("/*") ~ many(elem(x => x != '/' && x != '*')
     | (many1(word("/"))  ~  elem(x => x != '/' && x != '*')) 
     | (many1(word("*"))  ~  elem(x => x != '/' && x != '*'))) 
-    ~ (many1(oneOf("/")) ~ word("*")) |>  { (cs, range) => ErrorToken("Nested comment").setPos(range._1) },
+    ~ (many1(oneOf("/")) ~ word("*")) |>  { (cs, range) => ErrorToken("Error token. Found nested comment: " ++ cs.mkString.slice(0, math.min(cs.mkString.length, 10)) ++ "...").setPos(range._1) },
     
     // Find proper comments
     // "/*" ~ ( many(anyChar \ {"/", "*"}) 
@@ -118,8 +122,7 @@ object Lexer extends Pipeline[List[File], Iterator[Token]]
     ~ (many1(oneOf("*")) ~ word("/")) |>  { (cs, range) => CommentToken(cs.mkString).setPos(range._1) },
     
     // Find unclosed comments
-    word("/*") |>  { (cs, range) => ErrorToken("Unclosed comment").setPos(range._1) },
-
+    word("/*") |>  { (cs, range) => ErrorToken("Error token. Unclosed comment: " ++ cs.mkString.slice(0,  math.min(cs.mkString.length, 10)) ++ "...").setPos(range._1)},
     // Make sure that unclosed multi-line comments result in an ErrorToken.
   ) onError {
     // We also emit ErrorTokens for Scallion-handled errors.
