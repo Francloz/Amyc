@@ -42,14 +42,33 @@ object Parser extends Pipeline[Iterator[Token], Program]
     case id@IdentifierToken(name) => (name, id.position)
   }
 
-  // A definition within a module.
-  lazy val definition: Syntax[ClassOrFunDef] = ???
+  // A definition within a module.<<<<<<<<<<<<<<<
+  lazy val generType: identifier | primitiveType
+
+  lazy val definition: Syntax[ClassOrFunDef] = functionDefinition | abstractClassDefinition | caseClassDefinition
+   
+  lazy val functionDefinition: Syntax[ClassOrFunDef] = 
+    (kw("def") ~ identifier ~ "(".skip ~ parameters ~ ")".skip ~ ":".skip ~  generType ~ "{".skip ~ expression ~ "}".skip).map {
+      case kw ~ id ~ param ~ rtype ~ body => Fun(id, params, rtype, body).setPos(kw)
+    }
+    // FunDef(name: Name, params: List[ParamDef], retType: TypeTree, body: Expr) 
+  
+  lazy val abstractClassDefinition: Syntax[ClassOrFunDef]  =
+    (kw("abstract") ~ kw("class") ~ identifier).map {
+      case kw ~ _ ~ id => AbstractClassDef(id).setPos(kw)
+    } 
+  
+  lazy val caseClassDefinition: Syntax[ClassOrFunDef] = 
+    (kw("case") ~ kw("class") ~ identifier).map {
+      case kw ~ _ ~ id ~ params ~ kw("extends") ~ parent => CaseClassDef(id, params, parent).setPos(kw)
+    } 
+    // CaseClassDef(name: Name, fields: List[TypeTree], parent: Name)
 
   // A list of parameter definitions.
   lazy val parameters: Syntax[List[ParamDef]] = repsep(parameter, ",").map(_.toList)
 
-  // A parameter definition, i.e., an identifier along with the expected type.
-  lazy val parameter: Syntax[ParamDef] = ???
+  // A parameter definition, i.e., an identifier along with the expected type. <<<<<<<<<
+  lazy val parameter: Syntax[ParamDef] = identifier ~ ":" ~ (primitiveType | identifierType)
 
   // A type expression.
   lazy val typeTree: Syntax[TypeTree] = primitiveType | identifierType
@@ -67,7 +86,6 @@ object Parser extends Pipeline[Iterator[Token], Program]
 
   // A user-defined type (such as `List`).
   lazy val identifierType: Syntax[TypeTree] = ???
-
 
   // An expression.
   // HINT: You can use `operators` to take care of associativity and precedence
