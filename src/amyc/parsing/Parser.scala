@@ -43,34 +43,44 @@ object Parser extends Pipeline[Iterator[Token], Program]
   }
 
   // A definition within a module.<<<<<<<<<<<<<<<
-  lazy val generType: identifier | primitiveType
-
   lazy val definition: Syntax[ClassOrFunDef] = functionDefinition | abstractClassDefinition | caseClassDefinition
    
   lazy val functionDefinition: Syntax[ClassOrFunDef] = 
-    (kw("def") ~ identifier ~ "(".skip ~ parameters ~ ")".skip ~ ":".skip ~  generType ~ "{".skip ~ expression ~ "}".skip).map {
-      case kw ~ id ~ param ~ rtype ~ body => Fun(id, params, rtype, body).setPos(kw)
+    (kw("def") ~ identifierPos ~ "(".skip ~ parameters ~ ")".skip ~ ":".skip ~  typeTree ~ "{".skip ~ expr ~ "}".skip).map {
+      case kw ~ id ~ params ~ rtype ~ body => FunDef(id._1, params, rtype, body).setPos(kw)
     }
     // FunDef(name: Name, params: List[ParamDef], retType: TypeTree, body: Expr) 
   
   lazy val abstractClassDefinition: Syntax[ClassOrFunDef]  =
-    (kw("abstract") ~ kw("class") ~ identifier).map {
-      case kw ~ _ ~ id => AbstractClassDef(id).setPos(kw)
+    (kw("abstract") ~ kw("class") ~ identifierPos).map {
+      case kw ~ _ ~ id => AbstractClassDef(id._1).setPos(kw)
     } 
   
   lazy val caseClassDefinition: Syntax[ClassOrFunDef] = 
-    (kw("case") ~ kw("class") ~ identifier).map {
-      case kw ~ _ ~ id ~ params ~ kw("extends") ~ parent => CaseClassDef(id, params, parent).setPos(kw)
+    (kw("case") ~ kw("class") ~ identifierPos ~ "(".skip ~ parameters ~ ")".skip ~ kw("extends") ~ identifier).map {
+      case kw ~ _ ~ id ~ params ~ _ ~ parent => CaseClassDef(id._1, getTypes(params), parent).setPos(kw)
     } 
-    // CaseClassDef(name: Name, fields: List[TypeTree], parent: Name)
+  
+  // CaseClassDef(name: Name, fields: List[TypeTree], parent: Name)
+  
+  def getTypes(params : List[ParamDef]) : List[TypeTree] = {
+    for (p <- params) yield { 
+      p match {
+        case ParamDef(name, t) => t
+      }
+    }
+  } 
 
   // A list of parameter definitions.
+
   lazy val parameters: Syntax[List[ParamDef]] = repsep(parameter, ",").map(_.toList)
 
   // A parameter definition, i.e., an identifier along with the expected type. <<<<<<<<<
-  lazy val parameter: Syntax[ParamDef] = identifier ~ ":" ~ (primitiveType | identifierType)
+  lazy val parameter: Syntax[ParamDef] = 
+    (identifier ~ ":".skip ~ identifierType).map {
+      case id ~ typ => ParamDef(id, typ) 
+    }
 
-  // A type expression.
   lazy val typeTree: Syntax[TypeTree] = primitiveType | identifierType
 
   // A built-in type (such as `Int`).
@@ -84,8 +94,12 @@ object Parser extends Pipeline[Iterator[Token], Program]
     }).setPos(tk)
   }
 
-  // A user-defined type (such as `List`).
-  lazy val identifierType: Syntax[TypeTree] = ???
+  // A user-defined type (such as `List`). <<<<<<<<<<<<<<<<<<<<<<
+  lazy val identifierType: Syntax[TypeTree] = 
+    (identifier).map {
+      case id => TypeTree(ClassType(QualifiedName(None, id)))
+    }
+    
 
   // An expression.
   // HINT: You can use `operators` to take care of associativity and precedence

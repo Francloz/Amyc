@@ -15,41 +15,6 @@ import scala.math.BigInt
 object Lexer extends Pipeline[List[File], Iterator[Token]]
                 with Lexers[Token, Char, SourcePosition] {
 
-  /** Tiny Scallion-lexer reference:
-    * ==============================
-    * Scallion's lexer essentially allows you to define a list of regular expressions
-    * in their order of priority. To tokenize a given input stream of characters, each
-    * individual regular expression is applied in turn. If a given expression matches, it
-    * is used to produce a token of maximal length. Whenever a regular expression does not
-    * match, the expression of next-highest priority is tried.
-    * The result is a stream of tokens.
-    *
-    * Regular expressions `r` can be built using the following operators:
-    *   - `word("abc")`  matches the sequence "abc" exactly
-    *   - `r1 | r2`      matches either expression `r1` or expression `r2`
-    *   - `r1 ~ r2`      matches `r1` followed by `r2`
-    *   - `oneOf("xy")`  matches either "x" or "y"
-    *                    (i.e., it is a shorthand of `word` and `|` for single characters)
-    *   - `elem(c)`      matches character `c`
-    *   - `elem(f)`      matches any character for which the boolean predicate `f` holds 
-    *   - `opt(r)`       matches `r` or nothing at all
-    *   - `many(r)`      matches any number of repetitions of `r` (including none at all)
-    *   - `many1(r)`     matches any non-zero number of repetitions of `r`
-    *  
-    * To define the token that should be output for a given expression, one can use
-    * the `|>` combinator with an expression on the left-hand side and a function
-    * producing the token on the right. The function is given the sequence of matched
-    * characters and the source-position range as arguments.
-    * 
-    * For instance,
-    *
-    *   `elem(_.isDigit) ~ word("kg") |> {
-    *     (cs, range) => WeightLiteralToken(cs.mkString).setPos(range._1)) }`
-    *
-    * will match a single digit followed by the characters "kg" and turn them into a
-    * "WeightLiteralToken" whose value will be the full string matched (e.g. "1kg").
-    */
-
 
   import Tokens._
 
@@ -76,19 +41,19 @@ object Lexer extends Pipeline[List[File], Iterator[Token]]
     
     // Identifiers
     // alpha alphanum*
-    oneOf("qwertyuiopasdfghjklzxcvbnmQWERTYUIOPASDFGHJKLZXCVBNM") ~
-    many(oneOf("qwertyuiopasdfghjklzxcvbnmQWERTYUIOPASDFGHJKLZXCVBNM1234567890_"))
+    elem(c => ('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z')) ~
+    many(elem(c => ('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z') || c == '_' || ('0' <= c && c <= '9')))
     |> { (cs, range) => IdentifierToken(cs.mkString).setPos(range._1) },
 
     // Integer literals
-    many1(oneOf("1234567890")) 
+    many1(elem(c => ('0' <= c && c <= '9'))) 
     |> { (cs, range) => if (cs.mkString.length < 10 && BigInt(cs.mkString) <= 2147483647) IntLitToken(cs.mkString.toInt).setPos(range._1) else ErrorToken("Int overflow (the maximum integer is 2147483647): " ++ cs.mkString).setPos(range._1) },
 
     // String literals
-    // All characters except "
-    elem('\"') ~ many(elem(_ != '\"')) ~ elem('\"') |> { (cs, range) => StringLitToken(cs.mkString.slice(1, cs.mkString.length - 1)).setPos(range._1) },
+    // All characters except " in one line
+    elem('\"') ~ many(elem(x => x != '\"' && x != '\n' && x != '\r')) ~ elem('\"') |> { (cs, range) => StringLitToken(cs.mkString.slice(1, cs.mkString.length - 1)).setPos(range._1) },
     // Unclosed string
-    elem('\"') ~ many(elem(_ != '\"')) |> { (cs, range) => ErrorToken(cs.mkString.slice(1, cs.mkString.length - 1)).setPos(range._1) },
+    elem('\"') ~ many(elem(_ != '\"')) |> { (cs, range) => ErrorToken("Unclosed string: " ++ cs.mkString.slice(0, math.min(cs.mkString.length, 10)) ++ "...").setPos(range._1) },
     
 
     // Delimiters and whitespace
@@ -103,26 +68,11 @@ object Lexer extends Pipeline[List[File], Iterator[Token]]
 
     // Multiline comments
 
-    // Find nested comments
-    // "/*" ~ ( many(anyChar \ {"/", "*"}) 
-    //          | many1("/") ~ anyChar
-    //          | many1("*") ~ anyChar ) ~ many1("/") ~ "*"
-    word("/*") ~ many(elem(x => x != '/' && x != '*')
-    | (many1(word("/"))  ~  elem(x => x != '/' && x != '*')) 
-    | (many1(word("*"))  ~  elem(x => x != '/' && x != '*'))) 
-    ~ (many1(oneOf("/")) ~ word("*")) |>  { (cs, range) => ErrorToken("Error token. Found nested comment: " ++ cs.mkString.slice(0, math.min(cs.mkString.length, 10)) ++ "...").setPos(range._1) },
-    
     // Find proper comments
-    // "/*" ~ ( many(anyChar \ {"/", "*"}) 
-    //          | many1("/") ~ anyChar
-    //          | many1("*") ~ anyChar ) ~ many1("*") ~ "/"
-    word("/*") ~ many(elem(x => x != '/' && x != '*')
-    | (many1(word("/"))  ~  elem(x => x != '/' && x != '*')) 
-    | (many1(word("*"))  ~  elem(x => x != '/' && x != '*'))) 
-    ~ (many1(oneOf("*")) ~ word("/")) |>  { (cs, range) => CommentToken(cs.mkString).setPos(range._1) },
+    word("/*") ~ many(elem(_ != '*') | (elem('*') ~ (elem(_ != '/')))) ~ word("*/") |>  { (cs, range)  => CommentToken(cs.mkString("")) },
     
     // Find unclosed comments
-    word("/*") |>  { (cs, range) => ErrorToken("Error token. Unclosed comment: " ++ cs.mkString.slice(0,  math.min(cs.mkString.length, 10)) ++ "...").setPos(range._1)},
+    word("/*") |>  { (cs, range) => ErrorToken("Unclosed comment: " ++ cs.mkString.slice(0,  math.min(cs.mkString.length, 10)) ++ "...").setPos(range._1)},
     // Make sure that unclosed multi-line comments result in an ErrorToken.
   ) onError {
     // We also emit ErrorTokens for Scallion-handled errors.
