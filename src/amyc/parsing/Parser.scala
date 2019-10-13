@@ -96,8 +96,9 @@ object Parser extends Pipeline[Iterator[Token], Program]
 
   // A user-defined type (such as `List`). <<<<<<<<<<<<<<<<<<<<<<
   lazy val identifierType: Syntax[TypeTree] = 
-    (identifier).map {
-      case id => TypeTree(ClassType(QualifiedName(None, id)))
+    (identifier ~ identifier.opt).map {
+      case mod ~ Some(id : String) => TypeTree(ClassType(QualifiedName(Some(mod), id)))
+      case id ~ None => TypeTree(ClassType(QualifiedName(None, id)))
     }
     
 
