@@ -28,15 +28,15 @@ object Parser extends Pipeline[Iterator[Token], Program]
   lazy val program: Syntax[Program] = many1(many1(module) ~<~ eof).map(ms => Program(ms.flatten.toList).setPos(ms.head.head))
 
   // A module (i.e., a collection of definitions and an initializer expression)
-  lazy val module: Syntax[ModuleDef] = (kw("object") ~ identifier ~ "{" ~ many(definition) ~ opt(expr) ~ "}").map {
-    case obj ~ id ~ _ ~ defs ~ body ~ _ => ModuleDef(id, defs.toList, body).setPos(obj)
-  }
+  lazy val module: Syntax[ModuleDef] = 
+    (kw("object") ~ identifier ~ "{" ~ many(definition) ~ opt(expr) ~ "}").map {
+      case obj ~ id ~ _ ~ defs ~ body ~ _ => ModuleDef(id, defs.toList, body).setPos(obj)
+    }
 
   // An identifier.
   val identifier: Syntax[String] = accept(IdentifierKind) {
     case IdentifierToken(name) => name
   }
-
   // An identifier along with its position.
   val identifierPos: Syntax[(String, Position)] = accept(IdentifierKind) {
     case id@IdentifierToken(name) => (name, id.position)
@@ -103,30 +103,109 @@ object Parser extends Pipeline[Iterator[Token], Program]
 
   // An expression.
   // HINT: You can use `operators` to take care of associativity and precedence
-  lazy val expr: Syntax[Expr] = recursive { ??? }
+  /*
+  id
+  | literal
+  | expr BinOp expr
+  | UnaryOp expr
+  | [id.]?id (args)
+  | expr; expr
+  | val ParamDef = Expr; Expr
+  | if (Expr) {Expr} else {Expr}
+  | Expr match {MatchCase+}
+  | error(Expr)
+  | ( Expr )
+  */
+  lazy val expr: Syntax[Expr] = recursive { 
+      valueExpr | sequenceExpr | defExpr
+    }
+  lazy val valueExpr : Syntax[Expr] = 
+    simpleExpr | ifelseExpr | 
+    matchExpr | binOpExpr | unaryOpExpr | 
+    ("(".skip ~ valueExpr ~ ")".skip)
+  
+  lazy val binOpExpr : Syntax[Expr] = ???
+  lazy val unaryOpExpr : Syntax[Expr] = ???
+  
+  lazy val sequenceExpr : Syntax[Expr] = 
+    (expr ~ ";".skip ~ expr).map {
+      case first ~ second => Sequence(first, second)
+    }
+  lazy val defExpr : Syntax[Expr] = 
+    (kw("val").skip ~ parameter ~ "=".skip ~ valueExpr ~ ";".skip ~ expr).map {
+      case param ~ value ~ next => Let(param, value, next)
+    }
+  lazy val ifelseExpr : Syntax[Expr] = 
+    (kw("if").skip ~ "(".skip ~ expr ~ ")".skip ~ "{".skip ~ expr ~ "}".skip ~ kw("else").skip ~ "{".skip ~ expr ~ "}".skip).map {
+      case i ~ t ~e => Ite(i,t,e)
+    }
+  lazy val error : Syntax[Expr] =  (kw("error").skip ~ "(".skip ~ expr ~ ")".skip).map {
+    case expres => Error(expres)
+  }
+  lazy val matchExpr : Syntax[Expr] = 
+    (expr ~ kw("match").skip ~ "{".skip ~  oneOrMoreCases ~ "}".skip).map {
+      case scrut ~ cases => Match(scrut, cases)
+    }
+  
+  lazy val nestedExpr : Syntax[Expr] =  "(".skip ~ expr ~ ")".skip
+  // Cases
+  lazy val oneOrMoreCases : Syntax[List[MatchCase]] = 
+    (one_case ~ many_cases).map {
+      case one ~ many => one :: many 
+    }
+  lazy val many_cases : Syntax[List[MatchCase]] = repsep(one_case, ",").map(_.toList)
+  lazy val one_case : Syntax[MatchCase] = 
+    (kw("case").skip ~ pattern ~ "=>".skip ~ expr).map{
+      case pat ~ body => MatchCase(pat,body)
+    }
+  // HINT: It is useful to have a restricted set of expressions that don't include any more operators on the outer level.
+  lazy val simpleExpr: Syntax[Expr] = literal.up[Expr] | variableOrCall
 
-  // A literal expression.
-  lazy val literal: Syntax[Literal[_]] = ???
+  lazy val literal: Syntax[Literal[_]] = endLit //| ("(".skip ~ ")".skip)
+  
+  lazy val endLit : Syntax[Literal[_]] = accept(LiteralKind) {
+    case tk@IntLitToken(value) => IntLiteral(value)        // e.g. integer literal "123"
+    case tk@StringLitToken(value) => StringLiteral(value)   
+    case tk@BoolLitToken(value) => BooleanLiteral(value)   
+  }
+  lazy val variableOrCall: Syntax[Expr] = 
+    (identifier ~ 
+    ( ".".skip ~ identifier).opt ~ 
+    ("(".skip ~ arguments ~ ")".skip).opt).map {
+      case mod ~ Some(id : String) ~ Some(args : List[Expr]) => Call(QualifiedName(Option(mod),id), args)
+      case id ~ None ~ Some(args : List[Expr]) => Call(QualifiedName(None, id), args)
+      case id ~ None ~ None => Variable(id)
+    }
+  
+  lazy val arguments: Syntax[List[Expr]] = repsep(expr, ",").map(_.toList)
+
 
   // A pattern as part of a mach case.
+  /*
+    [Id.]Id (Patterns) | Id | Literal | _
+  */
+  lazy val patterns: Syntax[List[Pattern]] = repsep(pattern, ",").map(_.toList)
+
   lazy val pattern: Syntax[Pattern] = recursive {
-    literalPattern | wildPattern | ???
+    literalPattern | wildPattern | idOrCaseClassPattern
   }
 
-  lazy val literalPattern: Syntax[Pattern] = ???
+  lazy val idOrCaseClassPattern: Syntax[Pattern] = 
+    (identifier ~ 
+    (".".skip ~ identifier ).opt ~ 
+    ("(".skip ~ patterns ~ ")".skip).opt).map {
+      case mod ~ Some(id : String) ~ Some(ps : List[Pattern]) => CaseClassPattern(QualifiedName(Option(mod), id), ps)
+      case id ~ None ~ Some(ps : List[Pattern]) => CaseClassPattern(QualifiedName(None, id), ps)
+      case id ~ None ~ None => IdPattern(id)
+    } 
+  
+  lazy val literalPattern: Syntax[Pattern] = (literal).map {
+    case lit => LiteralPattern(lit)
+  }
 
-  lazy val wildPattern: Syntax[Pattern] = ???
-
-
-  // HINT: It is useful to have a restricted set of expressions that don't include any more operators on the outer level.
-  lazy val simpleExpr: Syntax[Expr] = literal.up[Expr] | variableOrCall | ???
-
-  lazy val variableOrCall: Syntax[Expr] = ???
-
-
-  // TODO: Other definitions.
-  //       Feel free to decompose the rules in whatever way convenient.
-
+  lazy val wildPattern: Syntax[Pattern] = (kw("_")).map {
+    case kw => WildcardPattern()
+  }
 
   // Ensures the grammar is in LL(1), otherwise prints some counterexamples
   lazy val checkLL1: Boolean = {

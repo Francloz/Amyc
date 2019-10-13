@@ -41,7 +41,7 @@ trait TreeModule {
   case class BooleanLiteral(value: Boolean) extends Literal[Boolean]
   case class StringLiteral(value: String) extends Literal[String]
   case class UnitLiteral() extends Literal[Unit] { val value: Unit = () }
-
+ 
   // Binary operators
   case class Plus(lhs: Expr, rhs: Expr) extends Expr
   case class Minus(lhs: Expr, rhs: Expr) extends Expr
