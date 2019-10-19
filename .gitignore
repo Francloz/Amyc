@@ -1,5 +1,6 @@
 # sbt compilation output
 target/
+lib/
 project/target
 # Compiler output and nodejs modules
 compiler/**/*.html
