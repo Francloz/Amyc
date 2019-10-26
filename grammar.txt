@@ -17,7 +17,7 @@ moreParam ::= , expr moreParam | ?
 
 literal ::= <Literal> | ( )
 matchExpr ::= match { cases } [matchExpr | ?]
-
+  
 cases ::= case pattern => expr [cases | ?]
 pattern ::= literal | _ | identifier [( paramPatterns ) | ?]
 paramPatterns ::= pattern [, paramPatterns] | ?
