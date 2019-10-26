@@ -1,0 +1,32 @@
+expr ::= defExp value moreExpr
+moreExpr ::= ; defExp value moreExpr | ?
+defExpr ::= val <Identifier> : typeTree = | ?
+
+value ::= ifExpr | binOp [matchExpr | ?]
+
+typeTree ::= <Primitive Type> | identifier
+ifExpr ::= if (expr) {expr} else {expr}
+
+binOp ::= OperationsOf[unaryOp basic] | [unary | ?] basic
+basic ::= (expr) | error (expr) | callOrVar | literal
+
+callOrVar ::= identifier [( param ) | ?]
+
+param ::= expr moreParam | ?
+moreParam ::= , expr moreParam | ?
+
+literal ::= <Literal> | ( )
+matchExpr ::= match { cases } [matchExpr | ?]
+
+cases ::= case pattern => expr [cases | ?]
+pattern ::= literal | _ | identifier [( paramPatterns ) | ?]
+paramPatterns ::= pattern [, paramPatterns] | ?
+identifier := <Identifier> [. <Identifier> | ?]
+
+unary ::= - | !
+op1 ::= * | / | %
+op2 ::= + | -
+op3 ::= < | <=
+op4 ::= && 
+op5 ::= || 
+
