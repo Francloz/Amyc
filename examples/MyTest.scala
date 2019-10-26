@@ -1,5 +1,1 @@
-object MyTest {
-  def fun(x : Int) : Int = {x}
-
-  -error("fedf")
-}
+fun(x,-2+2,4,fun(2,2))
