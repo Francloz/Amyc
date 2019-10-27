@@ -70,12 +70,7 @@ object Parser extends Pipeline[Iterator[Token], Program]
     }
   } 
   
-  lazy val parameters: Syntax[List[ParamDef]] = repsep(parameter, ",").map(_.toList)
-
-  lazy val parameter: Syntax[ParamDef] = 
-    (identifier ~ ":".skip ~ typeTree).map {
-      case id ~ typ => ParamDef(id, typ) 
-    }
+  
 
   lazy val typeTree: Syntax[TypeTree] = primitiveType | identifierType
 
@@ -122,27 +117,23 @@ object Parser extends Pipeline[Iterator[Token], Program]
   lazy val defExpr: Syntax[ParamDef] = (kw("val") ~ identifier ~ ":".skip ~ typeTree ~ "=".skip).map {
     case kw ~ id ~ tt => ParamDef(id, tt).setPos(kw.position) 
   } 
-  
   lazy val ifExpr : Syntax[Expr] = 
-    (kw("if").skip ~ "(".skip ~ expr ~")".skip ~ "{".skip ~ expr ~ "}".skip ~ kw("else").skip ~ "{".skip~ expr ~ "}".skip).map {
-      case cond ~ i ~ e => Ite(cond,i,e)
-    }
-  lazy val value: Syntax[Expr] = ((ifExpr | binOp ) ~ manyMatches.opt).map{
+  (kw("if").skip ~ "(".skip ~ expr ~")".skip ~ "{".skip ~ expr ~ "}".skip ~ kw("else").skip ~ "{".skip~ expr ~ "}".skip).map {
+    case cond ~ i ~ e => Ite(cond,i,e)
+  }
+  lazy val value: Syntax[Expr] = ((ifExpr | binOp) ~ manyMatches.opt).map{
     case value ~ Some(matches : List[List[MatchCase]]) => matches.foldLeft(value)((exp, list) => Match(exp, list)) 
   }
-
   lazy val manyMatches : Syntax[List[List[MatchCase]]]  = recursive { 
     (matchExpression ~ manyMatches.opt).map {
       case first ~ Some(following) => first :: following
       case first ~ None => List(first)
     }
   }
-
   lazy val matchExpression : Syntax[List[MatchCase]] =
-    (kw("match").skip ~ "{".skip ~ oneOrMoreCases ~ "}".skip).map {
-      case cases => cases
-    }
-  
+  (kw("match").skip ~ "{".skip ~ oneOrMoreCases ~ "}".skip).map {
+    case cases => cases
+  }
   lazy val binOp : Syntax[Expr] = recursive {
     operators(factor)(
       op("*") | op("/") | op("%") is LeftAssociative,
@@ -164,20 +155,12 @@ object Parser extends Pipeline[Iterator[Token], Program]
       case (l, "==", r) => Equals(l, r)
     }
   }
-
   lazy val factor: Syntax[Expr] = 
     ((op("-") | op("!")).opt ~ basic).map {
       case None ~ e => e
       case Some("-") ~ e => Neg(e)
       case Some("!") ~ e => Not(e)
     }
-
-  lazy val basic: Syntax[Expr] = 
-    (("(".skip ~ expr ~ ")".skip) 
-    | error 
-    | ("(".skip ~ expr ~ ")".skip) 
-    | literal.up[Expr]
-    | variableOrCall)
   
   lazy val error: Syntax[Expr] = (kw("error") ~ "(".skip ~ value ~ ")".skip).map{
     case kw ~ message => Error(message).setPos(kw.position)
@@ -188,19 +171,6 @@ object Parser extends Pipeline[Iterator[Token], Program]
       case first ~ Some(second) => QualifiedName(Some(first), second)
       case first ~ None => QualifiedName(None, first)
     }
-  lazy val variableOrCall: Syntax[Expr] = 
-    (identModule ~ ("(".skip ~ arguments.opt ~ ")".skip).opt).map {
-      case id ~ Some(Some(params)) => Call(id, params)
-      case id ~ Some(None) => Call(id, List())
-      case QualifiedName(None, first) ~ None => Variable(first)
-    }
-
-  lazy val arguments: Syntax[List[Expr]] = recursive {
-    (expr ~ (",".skip ~ arguments).opt).map {
-      case first ~ Some(rest) => first :: rest
-      case first ~ None => List(first)
-    } 
-  }
 
   lazy val oneOrMoreCases: Syntax[List[MatchCase]] = recursive{
     (kw("case") ~ pattern ~ "=>".skip ~ expr ~ oneOrMoreCases.opt).map {
@@ -209,39 +179,47 @@ object Parser extends Pipeline[Iterator[Token], Program]
     }
   }
 
-  // ----------------------------------------LITERALS----------------------------------------------
-
-  lazy val literal: Syntax[Literal[_]] = endLit | unitLit
-  
-  lazy val unitLit : Syntax[Literal[_]] = 
-    ("(".skip ~ ")").map {
-      case _ => UnitLiteral() 
-    }
+  // -------------------------------------------LITERAL-CONFLICT----------------------------------------------
+  lazy val literal: Syntax[Literal[_]] = endLit
   lazy val endLit : Syntax[Literal[_]] = accept(LiteralKind) {
     case tk@IntLitToken(value) => IntLiteral(value) 
     case tk@StringLitToken(value) => StringLiteral(value)   
     case tk@BoolLitToken(value) => BooleanLiteral(value)   
   }
-
-  // -----------------------------------------PATTERNS-----------------------------------------------
-  
-  lazy val patterns: Syntax[List[Pattern]] = repsep(pattern, ",").map(_.toList)
-
-  lazy val pattern: Syntax[Pattern] = recursive {
-    literalPattern | wildPattern | idOrCaseClassPattern
-  }
-
-  lazy val idOrCaseClassPattern: Syntax[Pattern] = 
-    (identifier ~ 
-    (".".skip ~ identifier ).opt ~ 
-    ("(".skip ~ patterns ~ ")".skip).opt).map {
-      case mod ~ Some(id : String) ~ Some(ps : List[Pattern]) => CaseClassPattern(QualifiedName(Option(mod), id), ps)
-      case id ~ None ~ Some(ps : List[Pattern]) => CaseClassPattern(QualifiedName(None, id), ps)
-      case id ~ None ~ None => IdPattern(id)
-    } 
   
   lazy val literalPattern: Syntax[Pattern] = (literal).map {
     case lit => LiteralPattern(lit)
+  }
+  // -----------------------------------------COMAS CONFLICT-----------------------------------------------
+  lazy val arguments: Syntax[List[Expr]] = = repsep(expr, ",").map(_.toList)
+  lazy val patterns: Syntax[List[Pattern]] = repsep(pattern, ",").map(_.toList)
+  lazy val parameters: Syntax[List[ParamDef]] = repsep(parameter, ",").map(_.toList)
+
+  //-----------------------------------------ID-&-PAR-CONFLICT------------------------------------------------
+  lazy val basic: Syntax[Expr] = 
+    (("(".skip ~ expr ~ ")".skip) 
+    | error 
+    | literal.up[Expr]
+    | variableOrCall)
+
+  lazy val idOrCaseClassPattern: Syntax[Pattern] = 
+    (identModule ~  ("(".skip ~ patterns ~ ")".skip).opt).map {
+      case q ~ Some(ps : List[Pattern]) => CaseClassPattern(q, ps)
+      case q  ~ Some(ps : List[Pattern]) => CaseClassPattern(q, ps)
+      case QualifiedName(None, id) ~ None ~ None => IdPattern(id)
+    } 
+  lazy val variableOrCall: Syntax[Expr] = 
+    (identModule ~ ("(".skip ~ arguments ~ ")".skip).opt).map {
+      case id ~ Some(Some(params)) => Call(id, params)
+      case id ~ Some(None) => Call(id, List())
+      case QualifiedName(None, first) ~ None => Variable(first)
+    }
+  lazy val parameter: Syntax[ParamDef] = 
+    (identifier ~ ":".skip ~ typeTree).opt).map {
+      case id ~ Some(typ) => ParamDef(id, typ) 
+    }
+  lazy val pattern: Syntax[Pattern] = recursive {
+    literalPattern | wildPattern | idOrCaseClassPattern
   }
 
   lazy val wildPattern: Syntax[Pattern] = (kw("_")).map {
