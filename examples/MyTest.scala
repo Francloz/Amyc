@@ -1,5 +1,3 @@
-object MyTest {
-  def fun(x : Int) : Int = {x}
-
-  -error("fedf")
+object Test {
+  3 + 3 match {case 6=> 6} + 3 match {case 6=> 6} 
 }
