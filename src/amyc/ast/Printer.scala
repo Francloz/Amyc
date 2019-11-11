@@ -157,6 +157,10 @@ trait Printer {
           case StringType => "String"
           case UnitType => "Unit"
           case ClassType(name) => name
+
+          case other => 
+            print("This should never happen");
+            other.getClass.toString  
         }
 
     }

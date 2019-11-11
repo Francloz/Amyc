@@ -61,7 +61,7 @@ class SymbolTable {
   def getConstructor(owner: String, name: String): Option[(Identifier, ConstrSig)] = {
     for {
       sym <- defsByName.get(owner, name)
-      sig <- constructors.get(sym)
+      sig <- constructors.get(sym) 
     } yield (sym, sig)
   }
   def getConstructor(symbol: Identifier) = constructors.get(symbol)

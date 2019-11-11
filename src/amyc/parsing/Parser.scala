@@ -183,22 +183,22 @@
     } 
     lazy val seqExpr: Syntax[Expr] = (value ~ (";".skip ~ expr).opt).map {
       case value ~ None => value 
-      case value ~ Some(expr) => Sequence(value, expr) 
+      case value ~ Some(expr) => Sequence(value, expr) .setPos(value.position)
     } 
     lazy val ifExpr : Syntax[Expr] = 
-      (kw("if").skip ~ "(".skip ~ expr ~")".skip ~ "{".skip ~ expr ~ "}".skip ~ kw("else").skip ~ "{".skip~ expr ~ "}".skip).map {
-        case cond ~ i ~ e => Ite(cond,i,e)
+      (kw("if") ~ "(".skip ~ expr ~")".skip ~ "{".skip ~ expr ~ "}".skip ~ kw("else").skip ~ "{".skip~ expr ~ "}".skip).map {
+        case kw ~ cond ~ i ~ e => Ite(cond,i,e).setPos(kw.position)
       }
     
     lazy val value: Syntax[Expr] = 
       (binOp ~ manyMatches.opt).map{
-        case value ~ Some(matches) => getMatchExpr(value, matches)
-        case value ~ None => value 
+        case value ~ Some(matches) => getMatchExpr(value, matches).setPos(value.position)
+        case value ~ None => value
       }
   
     // Turn many consecutive matches into a match expression
     def getMatchExpr(value : Expr, matches : List[List[MatchCase]]) : Expr = {
-      matches.foldLeft(value)((expr, list) => Match(expr, list))
+      matches.foldLeft(value)((expr, list) => Match(expr, list).setPos(expr.position))
     }
     // match { cases+ } [match { cases+ } .... | ? ]
     lazy val manyMatches : Syntax[List[List[MatchCase]]]  = recursive { 
@@ -214,8 +214,8 @@
     
     lazy val oneOrMoreCases :  Syntax[List[MatchCase]] = recursive {
       (kw("case").skip ~ pattern ~ "=>".skip ~ expr  ~ (oneOrMoreCases).opt).map {
-        case p ~ expr ~ Some(list) => MatchCase(p, expr) :: list
-        case p ~ expr ~ None => List(MatchCase(p, expr))
+        case p ~ expr ~ Some(list) => MatchCase(p, expr).setPos(p.position) :: list
+        case p ~ expr ~ None => List(MatchCase(p, expr).setPos(p.position))
       }
     }
     
@@ -229,25 +229,25 @@
         op("&&") is LeftAssociative,
         op("||") is LeftAssociative
       ) {
-        case (l, "+",  r) => Plus(l, r)
-        case (l, "-",  r) => Minus(l, r)
-        case (l, "/",  r) => Div(l, r)
-        case (l, "%",  r) => Mod(l, r)
-        case (l, "*",  r) => Times(l, r)
-        case (l, "<",  r) => LessThan(l, r)
-        case (l, "<=", r) => LessEquals(l, r)
-        case (l, "&&", r) => And(l, r)
-        case (l, "||", r) => Or(l, r)
-        case (l, "++", r) => Concat(l, r)
-        case (l, _, r) => Equals(l, r) // Wildcard to avoid warning
+        case (l, "+",  r) => Plus(l, r).setPos(l.position) 
+        case (l, "-",  r) => Minus(l, r).setPos(l.position) 
+        case (l, "/",  r) => Div(l, r).setPos(l.position) 
+        case (l, "%",  r) => Mod(l, r).setPos(l.position) 
+        case (l, "*",  r) => Times(l, r).setPos(l.position) 
+        case (l, "<",  r) => LessThan(l, r).setPos(l.position) 
+        case (l, "<=", r) => LessEquals(l, r).setPos(l.position) 
+        case (l, "&&", r) => And(l, r).setPos(l.position) 
+        case (l, "||", r) => Or(l, r).setPos(l.position) 
+        case (l, "++", r) => Concat(l, r).setPos(l.position) 
+        case (l, _, r) => Equals(l, r).setPos(l.position) // Wildcard to avoid warning
       }
     }
   
     lazy val factor: Syntax[Expr] = 
       ((op("-") | op("!")).opt ~ simpleExpr).map {
         case None ~ e => e
-        case Some("-") ~ e => Neg(e)
-        case Some(_) ~ e => Not(e) // Wildcard to avoid warning
+        case Some("-") ~ e => Neg(e).setPos(e.position)
+        case Some(_) ~ e => Not(e).setPos(e.position) // Wildcard to avoid warning
       }
   
     // A literal expression.
@@ -273,29 +273,29 @@
       literalPattern | wildPattern | classOrIdPattern
     }
   
-    lazy val literalPattern: Syntax[Pattern] = (literal | unitLit).map { case lit => LiteralPattern(lit)}
+    lazy val literalPattern: Syntax[Pattern] = (literal | unitLit).map { case lit => LiteralPattern(lit).setPos(lit.position)}
   
-    lazy val wildPattern: Syntax[Pattern] = kw("_").map {case kw => WildcardPattern()}
+    lazy val wildPattern: Syntax[Pattern] = kw("_").map {case kw => WildcardPattern().setPos(kw.position)}
     
-    lazy val classOrIdPattern: Syntax[Pattern] = (identifier ~ ((".".skip ~ identifier).opt ~ "(".skip ~ repsep(pattern, ",").map(_.toList) ~ ")".skip).opt).map{
-      case mod ~ Some(Some(id) ~ params) => CaseClassPattern(QualifiedName(Some(mod), id), params)
-      case id ~ Some(None ~ params) => CaseClassPattern(QualifiedName(None, id), params)
-      case id ~ None => IdPattern(id)
+    lazy val classOrIdPattern: Syntax[Pattern] = (identifierPos ~ ((".".skip ~ identifier).opt ~ "(".skip ~ repsep(pattern, ",").map(_.toList) ~ ")".skip).opt).map{
+      case (mod, pos) ~ Some(Some(id) ~ params) => CaseClassPattern(QualifiedName(Some(mod), id), params).setPos(pos)
+      case (id, pos) ~ Some(None ~ params) => CaseClassPattern(QualifiedName(None, id), params).setPos(pos)
+      case (id, pos) ~ None => IdPattern(id).setPos(pos)
     }
     
   
     // Basic expressions
     lazy val simpleExpr: Syntax[Expr] = literal.up[Expr] | variableOrCall | nestedOrUnit | error | ifExpr
     
-    lazy val variableOrCall: Syntax[Expr] = (identifier ~ ((".".skip ~ identifier).opt ~ "(".skip ~ repsep(expr, ",").map(_.toList) ~ ")".skip).opt).map {
-      case id ~ None => Variable(id)
-      case module ~ Some(Some(id) ~ parameters) => Call(QualifiedName(Some(module), id), parameters)
-      case id ~ Some(None ~ parameters) => Call(QualifiedName(None, id), parameters)
+    lazy val variableOrCall: Syntax[Expr] = (identifierPos ~ ((".".skip ~ identifier).opt ~ "(".skip ~ repsep(expr, ",").map(_.toList) ~ ")".skip).opt).map {
+      case (id, pos) ~ None => Variable(id).setPos(pos)
+      case (module,pos) ~ Some(Some(id) ~ parameters) => Call(QualifiedName(Some(module), id), parameters).setPos(pos)
+      case (id,pos) ~ Some(None ~ parameters) => Call(QualifiedName(None, id), parameters).setPos(pos)
     }
     
-    lazy val nestedOrUnit: Syntax[Expr] = ("(".skip ~ expr.opt ~ ")".skip).map {
-      case None => UnitLiteral()
-      case Some(expr) => expr
+    lazy val nestedOrUnit: Syntax[Expr] = ("(" ~ expr.opt ~ ")".skip).map {
+      case par ~ None => UnitLiteral().setPos(par.position)
+      case par ~ Some(expr) => expr
     }
     
     lazy val error: Syntax[Expr] = (kw("error") ~ "(".skip ~ value ~ ")".skip).map{
