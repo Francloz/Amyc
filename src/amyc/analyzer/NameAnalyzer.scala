@@ -277,26 +277,6 @@ object NameAnalyzer extends Pipeline[N.Program, (S.Program, SymbolTable)] {
                 if(matched_args.length != constr.argTypes.length)
                   fatal("Unmatching number of arguments", pat.position)
                 
-                //Check the types of the constructor arguments
-                matched_args.zip(constr.argTypes).foreach{ x =>
-                  val (pat, typ)  = x;
-                  if (! ((pat, typ) match {
-                    case (S.WildcardPattern(), _) => true
-                    case (S.IdPattern(_), _) => true
-                    case (S.LiteralPattern(S.IntLiteral(_)), S.IntType) => true
-                    case (S.LiteralPattern(S.BooleanLiteral(_)), S.BooleanType) => true
-                    case (S.LiteralPattern(S.StringLiteral(_)), S.StringType) => true
-                    case (S.LiteralPattern(S.UnitLiteral()), S.UnitType) => true
-                    case (S.CaseClassPattern(constrId, _), S.ClassType(typeId)) => 
-                      typeId == (table.getConstructor(constrId) match {
-                        case Some(x) => x.parent
-                        case None => fatal(s"This should never happen.", expr.position)
-                      })
-                    case _ => false
-                  }))
-                     fatal(s"Type error found while pattern matching $pat.", pat.position)
-                };
-                
                 // Check name duplicates
                 val flattened_map = matched_patterns.map {_._2}.flatten;
                 

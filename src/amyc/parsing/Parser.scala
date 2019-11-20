@@ -298,7 +298,7 @@
       case par ~ Some(expr) => expr
     }
     
-    lazy val error: Syntax[Expr] = (kw("error") ~ "(".skip ~ value ~ ")".skip).map{
+    lazy val error: Syntax[Expr] = (kw("error") ~ "(".skip ~ expr ~ ")".skip).map{
        case kw ~ message => Error(message).setPos(kw.position)
     }
   
