@@ -65,7 +65,7 @@ object TypeChecker extends Pipeline[(Program, SymbolTable), (Program, SymbolTabl
 
         // Function/constructor call
         case  Call(id, args) => 
-            (table.getConstructor(id)  getOrElse (table.getFunction(id) getOrElse fatal(s"${id} not found in the table.", e.position))) match {
+            (table.getConstructor(id)  getOrElse (table.getFunction(id) getOrElse sys.error(s"${id} not found in the table."))) match {
                 case sig => 
                   Constraint(sig.retType, expected, e.position) :: args.zip(sig.argTypes).flatMap{ case (e, t) => genConstraints(e, t) }.toList
                 }
@@ -117,8 +117,7 @@ object TypeChecker extends Pipeline[(Program, SymbolTable), (Program, SymbolTabl
           }
 
           val scrutVar = TypeVariable.fresh();
-          val outVar = TypeVariable.fresh();
-          genConstraints(scrut, scrutVar) ++ cases.flatMap(cse => handleCase(cse, scrutVar, outVar))
+          genConstraints(scrut, scrutVar) ++ cases.flatMap(cse => handleCase(cse, scrutVar, expected))
       }
     }
 
@@ -145,36 +144,55 @@ object TypeChecker extends Pipeline[(Program, SymbolTable), (Program, SymbolTabl
           case x => ()
         }
     }
+    
     // Solve the given set of typing constraints and
-    //  call `typeError` if they are not satisfiable.
+    // call `typeError` if they are not satisfiable.
     // We consider a set of constraints to be satisfiable exactly if they unify.
     def solveConstraints(constraints: List[Constraint]): Unit = {
-      //printConstraints(constraints);
-      //println();
+      // Uncomment to see constraints being solved
+      // printConstraints(constraints);
+      // println();
 
       constraints match {
         case Nil => ()
         case Constraint(found, expected, pos) :: more =>
-          // HINT: You can use the `subst_*` helper above to replace a type variable
-          //       by another type in your current set of constraints.
+          
+          def typeError() {
+            error(s"Type error: expected type $expected, found $found", pos)
+          }
+
           (found, expected) match {
+
+            // Decrease the index of type variables
             case (TypeVariable(i), TypeVariable(j)) => 
-              if (i < j)
-                solveConstraints(subst_*(more, i, expected))
-              else
-                solveConstraints(subst_*(more, j, found))
+              if (i < j) solveConstraints(subst_*(more, i, expected))
+              else solveConstraints(subst_*(more, j, found))
+
+            // Substitute type variables for types
             case (TypeVariable(i), other) => solveConstraints(subst_*(more, i, other))
             case (other, TypeVariable(i)) => solveConstraints(subst_*(more, i, other))
-            case (IntType, other)         => other match {case IntType =>           solveConstraints(more)  case _ => error(s"Expected type Int and got type $other", pos)}
-            case (BooleanType, other)     => other match {case BooleanType =>       solveConstraints(more)  case _ => error(s"Expected type Boolean and got type $other", pos)}
-            case (StringType, other)      => other match {case StringType =>        solveConstraints(more)  case _ => error(s"Expected type String and got type $other", pos)}
-            case (UnitType, other)        => other match {case UnitType =>          solveConstraints(more)  case _ => error(s"Expected type Unit and got type $other", pos)}
-            case (ClassType(id), other)   => other match {case ClassType(idx) =>    
-              if (id == idx) 
-                solveConstraints(more)  
-              else
-                error(s"Expected type $id and got type $other", pos)
-              case _ => error(s"Expected type $id and got type $other", pos)}
+          
+            // Assert equality and continue
+            case (_, _) => (found, expected) match {
+              // Assert primitive type equality
+              case (IntType, other)         => other match {case IntType =>     ()   case _ => typeError()}
+              case (BooleanType, other)     => other match {case BooleanType => ()   case _ => typeError()}
+              case (StringType, other)      => other match {case StringType =>  ()   case _ => typeError()}
+              case (UnitType, other)        => other match {case UnitType =>    ()   case _ => typeError()}
+              
+              // Assert class types equality
+              case (ClassType(id), other)   => other match {
+                case ClassType(idx) =>    
+                  if (id != idx) typeError()
+                case _ => 
+                  typeError()
+              }
+
+              // Not implemented types
+              case _ => sys.error(s"Constraint solver does not support types ($found, $expected).")
+            }; 
+            // Continue
+            solveConstraints(more)
           }
       }
     }
