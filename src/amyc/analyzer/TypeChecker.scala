@@ -36,6 +36,10 @@ object TypeChecker extends Pipeline[(Program, SymbolTable), (Program, SymbolTabl
       def topLevelConstraint(found: Type): List[Constraint] =
         List(Constraint(found, expected, e.position))
       
+      // Check that the operation matches its expected types
+      def checkOp(out : Type, lhs : Expr,  left : Type, rhs : Expr, right : Type) =
+        topLevelConstraint(out) ++ genConstraints(lhs, left) ++ genConstraints(rhs, right)
+
       e match {
         
         // Variables
@@ -48,16 +52,16 @@ object TypeChecker extends Pipeline[(Program, SymbolTable), (Program, SymbolTabl
         case  UnitLiteral()     => topLevelConstraint(UnitType)
     
         // Binary operators
-        case  Plus(lhs, rhs)       => topLevelConstraint(IntType)     ++ genConstraints(lhs, IntType)     ++ genConstraints(rhs, IntType)
-        case  Minus(lhs, rhs)      => topLevelConstraint(IntType)     ++ genConstraints(lhs, IntType)     ++ genConstraints(rhs, IntType)
-        case  Times(lhs, rhs)      => topLevelConstraint(IntType)     ++ genConstraints(lhs, IntType)     ++ genConstraints(rhs, IntType)
-        case  Div(lhs, rhs)        => topLevelConstraint(IntType)     ++ genConstraints(lhs, IntType)     ++ genConstraints(rhs, IntType)
-        case  Mod(lhs, rhs)        => topLevelConstraint(IntType)     ++ genConstraints(lhs, IntType)     ++ genConstraints(rhs, IntType)
-        case  LessThan(lhs, rhs)   => topLevelConstraint(BooleanType) ++ genConstraints(lhs, IntType)     ++ genConstraints(rhs, IntType)
-        case  LessEquals(lhs, rhs) => topLevelConstraint(BooleanType) ++ genConstraints(lhs, IntType)     ++ genConstraints(rhs, IntType)
-        case  Concat(lhs, rhs)     => topLevelConstraint(StringType)  ++ genConstraints(lhs, StringType)  ++ genConstraints(rhs, StringType)
-        case  And(lhs, rhs)        => topLevelConstraint(BooleanType) ++ genConstraints(lhs, BooleanType) ++ genConstraints(rhs, BooleanType)
-        case  Or(lhs, rhs)         => topLevelConstraint(BooleanType) ++ genConstraints(lhs, BooleanType) ++ genConstraints(rhs, BooleanType)
+        case  Plus(lhs, rhs)       => checkOp(IntType, lhs, IntType, rhs, IntType)
+        case  Minus(lhs, rhs)      => checkOp(IntType, lhs, IntType, rhs, IntType)
+        case  Times(lhs, rhs)      => checkOp(IntType, lhs, IntType, rhs, IntType)
+        case  Div(lhs, rhs)        => checkOp(IntType, lhs, IntType, rhs, IntType)
+        case  Mod(lhs, rhs)        => checkOp(IntType, lhs, IntType, rhs, IntType)
+        case  LessThan(lhs, rhs)   => checkOp(BooleanType, lhs, IntType, rhs, IntType)
+        case  LessEquals(lhs, rhs) => checkOp(BooleanType, lhs, IntType, rhs, IntType)
+        case  Concat(lhs, rhs)     => checkOp(StringType,  lhs, StringType, rhs, StringType)
+        case  And(lhs, rhs)        => checkOp(BooleanType, lhs, BooleanType, rhs, BooleanType)
+        case  Or(lhs, rhs)         => checkOp(BooleanType, lhs, BooleanType, rhs, BooleanType)
 
         // Unary operators
         case  Not(e) => topLevelConstraint(BooleanType) ++ genConstraints(e, BooleanType)
@@ -92,22 +96,27 @@ object TypeChecker extends Pipeline[(Program, SymbolTable), (Program, SymbolTabl
           def handlePattern(pat: Pattern, scrutExpected: Type):
             (List[Constraint], Map[Identifier, Type]) =
           {
+            // Litteral pattern handler 
+            def handleLiteralPattern(t : Type) = 
+              (List(Constraint(t, scrutExpected,  pat.position)), Map[Identifier, Type]())
+
             pat match {
               case WildcardPattern() =>       (List[Constraint](), Map[Identifier, Type]())
               case IdPattern(id) =>           (List(),             Map(id -> scrutExpected))
-              case LiteralPattern(lit) => lit match  {
-                case IntLiteral(_)     =>     (List(Constraint(IntType, scrutExpected, pat.position)),      Map[Identifier, Type]())
-                case UnitLiteral()    =>      (List(Constraint(UnitType, scrutExpected, pat.position)),    Map[Identifier, Type]())
-                case StringLiteral(_)  =>     (List(Constraint(StringType, scrutExpected, pat.position)),  Map[Identifier, Type]())
-                case BooleanLiteral(_)  =>    (List(Constraint(BooleanType, scrutExpected, pat.position)), Map[Identifier, Type]())
-              }
+              case LiteralPattern(lit) =>
+                lit match  {
+                  case IntLiteral(_)      =>  handleLiteralPattern(IntType)
+                  case UnitLiteral()      =>  handleLiteralPattern(UnitType)  
+                  case StringLiteral(_)   =>  handleLiteralPattern(StringType)   
+                  case BooleanLiteral(_)  =>  handleLiteralPattern(BooleanType)
+                }
               case CaseClassPattern(constrId, params) => 
                 val sig = table.getConstructor(constrId) getOrElse sys.error(s"Constructor $constrId has not been added to the table.");
                 val subConstraints = params.zip(sig.argTypes).map { case (param, argType) => handlePattern(param, argType) } 
-                val subList = subConstraints.flatMap{ case (list, _) => list }
-                val subMap  = subConstraints.flatMap{ case (_, map) => map.toList }.toMap
+                val subListConstraints = subConstraints.flatMap{ case (list, _) => list }
+                val subMapVars  = subConstraints.flatMap{ case (_, map) => map.toList }.toMap
 
-                (Constraint(sig.retType, scrutExpected, e.position) :: subList, subMap)
+                (Constraint(sig.retType, scrutExpected, e.position) :: subListConstraints, subMapVars)
             }
           }
 
@@ -144,7 +153,7 @@ object TypeChecker extends Pipeline[(Program, SymbolTable), (Program, SymbolTabl
           case x => ()
         }
     }
-    
+
     // Solve the given set of typing constraints and
     // call `typeError` if they are not satisfiable.
     // We consider a set of constraints to be satisfiable exactly if they unify.
