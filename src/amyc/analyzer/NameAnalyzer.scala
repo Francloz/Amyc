@@ -240,14 +240,14 @@ object NameAnalyzer extends Pipeline[N.Program, (S.Program, SymbolTable)] {
           // Also, calls 'fatal' if a new name violates the Amy naming rules.
           def transformPattern(pat: N.Pattern): (S.Pattern, List[(String, Identifier)]) = {
             pat match {
-              case N.WildcardPattern() => (S.WildcardPattern(), List())
+              case N.WildcardPattern() => (S.WildcardPattern().setPos(pat.position), List())
               
               case N.LiteralPattern(lit) => (S.LiteralPattern(lit match {
-                case N.IntLiteral(value) => S.IntLiteral(value)
-                case N.BooleanLiteral(value) => S.BooleanLiteral(value)
-                case N.StringLiteral(value) => S.StringLiteral(value)
-                case N.UnitLiteral() => S.UnitLiteral()
-              }), List())
+                case N.IntLiteral(value) => S.IntLiteral(value).setPos(lit.position)
+                case N.BooleanLiteral(value) => S.BooleanLiteral(value).setPos(lit.position)
+                case N.StringLiteral(value) => S.StringLiteral(value).setPos(lit.position)
+                case N.UnitLiteral() => S.UnitLiteral().setPos(lit.position)
+              }).setPos(pat.position), List())
               
               case N.IdPattern(name) => 
                 // Create a new fresh id for the identifier
@@ -259,7 +259,7 @@ object NameAnalyzer extends Pipeline[N.Program, (S.Program, SymbolTable)] {
                 if(locals.exists(x => x._1 == name))
                   fatal(s"Variable redefinition: $name", expr.position);
 
-                (S.IdPattern(fresh_id), List((name, fresh_id)))
+                (S.IdPattern(fresh_id).setPos(pat.position), List((name, fresh_id)))
 
               case N.CaseClassPattern(qname, args) => 
                 
@@ -284,7 +284,7 @@ object NameAnalyzer extends Pipeline[N.Program, (S.Program, SymbolTable)] {
                 (flattened_map).groupBy(_._1).foreach(x => if(x._2.length > 1) fatal(s"Duplicate of ${x._1} found in match case.", pat.position));
                 
                 // Return the pattern
-                (S.CaseClassPattern(id, matched_args), flattened_map)
+                (S.CaseClassPattern(id, matched_args).setPos(pat.position), flattened_map)
             }
           }
 

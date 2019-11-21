@@ -252,21 +252,17 @@
   
     // A literal expression.
     lazy val literal: Syntax[Literal[_]] = accept(LiteralKind) {
-      case tk@IntLitToken(value) => IntLiteral(value) 
-      case tk@StringLitToken(value) => StringLiteral(value)   
-      case tk@BoolLitToken(value) => BooleanLiteral(value)   
+        case a => a match {
+        case tk@IntLitToken(value) => IntLiteral(value).setPos(a.position)
+        case tk@StringLitToken(value) => StringLiteral(value).setPos(a.position)
+        case tk@BoolLitToken(value) => BooleanLiteral(value).setPos(a.position)   
+      }
     }
   
     lazy val unitLit : Syntax[Literal[_]] = 
       ("(".skip ~ ")").map {
-        case _ => UnitLiteral() 
+        case del => UnitLiteral().setPos(del.position) 
       }
-  
-    lazy val endLit : Syntax[Literal[_]] = accept(LiteralKind) {
-      case tk@IntLitToken(value) => IntLiteral(value) 
-      case tk@StringLitToken(value) => StringLiteral(value)   
-      case tk@BoolLitToken(value) => BooleanLiteral(value)   
-    }
   
     // Patterns
     lazy val pattern: Syntax[Pattern] = recursive {

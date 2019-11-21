@@ -65,9 +65,10 @@ object TypeChecker extends Pipeline[(Program, SymbolTable), (Program, SymbolTabl
 
         // Function/constructor call
         case  Call(id, args) => 
-          val funSig : FunSig = table.getFunction(id) getOrElse sys.error("This shouldnever happen.")
-          Constraint(funSig.retType, expected, e.position) :: args.zip(funSig.argTypes).flatMap{ case (e, t) => genConstraints(e, t) }.toList
-
+            (table.getConstructor(id)  getOrElse (table.getFunction(id) getOrElse fatal(s"${id} not found in the table.", e.position))) match {
+                case sig => 
+                  Constraint(sig.retType, expected, e.position) :: args.zip(sig.argTypes).flatMap{ case (e, t) => genConstraints(e, t) }.toList
+                }
         // The ; operator
         case  Sequence(e1, e2) => genConstraints(e1, TypeVariable.fresh()) ++ genConstraints(e2, expected)
         
@@ -95,28 +96,29 @@ object TypeChecker extends Pipeline[(Program, SymbolTable), (Program, SymbolTabl
               case WildcardPattern() =>       (List[Constraint](), Map[Identifier, Type]())
               case IdPattern(id) =>           (List(),             Map(id -> scrutExpected))
               case LiteralPattern(lit) => lit match  {
-                case IntLiteral(_)     =>     (topLevelConstraint(IntType),     Map[Identifier, Type]())
-                case UnitLiteral()    =>      (topLevelConstraint(UnitType),    Map[Identifier, Type]())
-                case StringLiteral(_)  =>     (topLevelConstraint(StringType),  Map[Identifier, Type]())
-                case BooleanLiteral(_)  =>    (topLevelConstraint(BooleanType), Map[Identifier, Type]())
+                case IntLiteral(_)     =>     (List(Constraint(IntType, scrutExpected, pat.position)),      Map[Identifier, Type]())
+                case UnitLiteral()    =>      (List(Constraint(UnitType, scrutExpected, pat.position)),    Map[Identifier, Type]())
+                case StringLiteral(_)  =>     (List(Constraint(StringType, scrutExpected, pat.position)),  Map[Identifier, Type]())
+                case BooleanLiteral(_)  =>    (List(Constraint(BooleanType, scrutExpected, pat.position)), Map[Identifier, Type]())
               }
               case CaseClassPattern(constrId, params) => 
-                val sig = table.getConstructor(constrId) getOrElse sys.error(s"This should never happen.");
+                val sig = table.getConstructor(constrId) getOrElse sys.error(s"Constructor $constrId has not been added to the table.");
                 val subConstraints = params.zip(sig.argTypes).map { case (param, argType) => handlePattern(param, argType) } 
                 val subList = subConstraints.flatMap{ case (list, _) => list }
                 val subMap  = subConstraints.flatMap{ case (_, map) => map.toList }.toMap
 
-                (Constraint(ClassType(constrId), scrutExpected, e.position) :: subList, subMap)
+                (Constraint(sig.retType, scrutExpected, e.position) :: subList, subMap)
             }
           }
 
-          def handleCase(cse: MatchCase, scrutExpected: Type): List[Constraint] = {
+          def handleCase(cse: MatchCase, scrutExpected: Type, expected: Type): List[Constraint] = {
             val (patConstraints, moreEnv) = handlePattern(cse.pat, scrutExpected)
-            genConstraints(cse.expr, scrutExpected)(env ++ moreEnv) ++ patConstraints
+            genConstraints(cse.expr, expected)(env ++ moreEnv) ++ patConstraints
           }
 
-          val st = TypeVariable.fresh()
-          genConstraints(scrut, st) ++ cases.flatMap(cse => handleCase(cse, st))
+          val scrutVar = TypeVariable.fresh();
+          val outVar = TypeVariable.fresh();
+          genConstraints(scrut, scrutVar) ++ cases.flatMap(cse => handleCase(cse, scrutVar, outVar))
       }
     }
 
@@ -137,23 +139,42 @@ object TypeChecker extends Pipeline[(Program, SymbolTable), (Program, SymbolTabl
       }
     }
 
+    def printConstraints(l : List[Constraint]) : Unit = {
+        l match {
+          case x :: xs => x match { case Constraint(i,j, _) => println((i, j)); printConstraints(xs) }
+          case x => ()
+        }
+    }
     // Solve the given set of typing constraints and
     //  call `typeError` if they are not satisfiable.
     // We consider a set of constraints to be satisfiable exactly if they unify.
     def solveConstraints(constraints: List[Constraint]): Unit = {
+      //printConstraints(constraints);
+      //println();
+
       constraints match {
         case Nil => ()
         case Constraint(found, expected, pos) :: more =>
           // HINT: You can use the `subst_*` helper above to replace a type variable
           //       by another type in your current set of constraints.
-          println((found, expected));
           (found, expected) match {
+            case (TypeVariable(i), TypeVariable(j)) => 
+              if (i < j)
+                solveConstraints(subst_*(more, i, expected))
+              else
+                solveConstraints(subst_*(more, j, found))
             case (TypeVariable(i), other) => solveConstraints(subst_*(more, i, other))
-            case (other, TypeVariable(i)) => solveConstraints(more)
-            case (IntType, other)         => other match {case IntType =>     solveConstraints(more)  case _ => error(s"Expected type Int and got type $other", pos)}
-            case (BooleanType, other)     => other match {case BooleanType => solveConstraints(more)  case _ => error(s"Expected type Boolean and got type $other", pos)}
-            case (StringType, other)      => other match {case StringType =>  solveConstraints(more)  case _ => error(s"Expected type String and got type $other", pos)}
-            case (UnitType, other)        => other match {case UnitType =>    solveConstraints(more)  case _ => error(s"Expected type Unit and got type $other", pos)}
+            case (other, TypeVariable(i)) => solveConstraints(subst_*(more, i, other))
+            case (IntType, other)         => other match {case IntType =>           solveConstraints(more)  case _ => error(s"Expected type Int and got type $other", pos)}
+            case (BooleanType, other)     => other match {case BooleanType =>       solveConstraints(more)  case _ => error(s"Expected type Boolean and got type $other", pos)}
+            case (StringType, other)      => other match {case StringType =>        solveConstraints(more)  case _ => error(s"Expected type String and got type $other", pos)}
+            case (UnitType, other)        => other match {case UnitType =>          solveConstraints(more)  case _ => error(s"Expected type Unit and got type $other", pos)}
+            case (ClassType(id), other)   => other match {case ClassType(idx) =>    
+              if (id == idx) 
+                solveConstraints(more)  
+              else
+                error(s"Expected type $id and got type $other", pos)
+              case _ => error(s"Expected type $id and got type $other", pos)}
           }
       }
     }
@@ -170,10 +191,7 @@ object TypeChecker extends Pipeline[(Program, SymbolTable), (Program, SymbolTabl
       // Type-check expression if present. We allow the result to be of an arbitrary type by
       // passing a fresh (and therefore unconstrained) type variable as the expected type.
       val tv = TypeVariable.fresh()
-      mod.optExpr.foreach(e => {
-        print("Constraints: ");
-        println(genConstraints(e, tv)(Map()));
-        solveConstraints(genConstraints(e, tv)(Map()))})
+      mod.optExpr.foreach(e => { solveConstraints(genConstraints(e, tv)(Map())) })
     }
 
     v
