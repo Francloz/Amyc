@@ -1,3 +1,8 @@
+/*
+I believe there is some character that crashes the tokenizer. I have not found what it is yet. It seems to be a character that is not printable.
+I  would  advise checking the encoding of the file if the compilation fails and remove any unusual characters.
+*/
+
 package amyc
 package codegen
 
@@ -46,10 +51,6 @@ object CodeGen extends Pipeline[(Program, SymbolTable), Module] {
       GetLocal(3) <:> Call("Std_digitToString") <:> mkString(" ") <:> Call("String_concat") <:> Call("String_concat") <:> 
       GetLocal(4) <:> Call("Std_digitToString") <:> mkString(" ") <:> Call("String_concat") <:> Call("String_concat") <:> 
       GetLocal(5) <:> Call("Std_digitToString") <:> mkString(" ") <:> Call("String_concat") <:> Call("String_concat") <:> 
-      GetLocal(6) <:> Call("Std_digitToString") <:> mkString(" ") <:> Call("String_concat") <:> Call("String_concat") <:> 
-      GetLocal(7) <:> Call("Std_digitToString") <:> mkString(" ") <:> Call("String_concat") <:> Call("String_concat") <:> 
-      GetLocal(8) <:> Call("Std_digitToString") <:> mkString(" ") <:> Call("String_concat") <:> Call("String_concat") <:> 
-      GetLocal(9) <:> Call("Std_digitToString") <:> mkString(" ") <:> Call("String_concat") <:> Call("String_concat") <:> 
       Call("Std_printString") <:> Drop  
     }
 
@@ -91,15 +92,15 @@ object CodeGen extends Pipeline[(Program, SymbolTable), Module] {
     def cgExpr(expr: Expr)(implicit locals: Map[Identifier, Int], lh: LocalsHandler): Code = {
       expr match {
         // Variables
-        case  Variable(name)    =>  GetLocal(locals(name))
+        case  Variable(name) => GetLocal(locals(name))
         
         // Literals
         case  IntLiteral(value)     => Const(value)
-        case  BooleanLiteral(value) => if (value == false) Const(0) else Const(1)
+        case  BooleanLiteral(value) => if (value) Const(1) else Const(0)
         case  StringLiteral(value)  => mkString(value)
         case  UnitLiteral()         => Const(0)
     
-        // // Binary integer operators
+        // Binary integer operators
         case Plus(lhs, rhs)       => cgExpr(lhs) <:> cgExpr(rhs) <:> Add
         case Minus(lhs, rhs)      => cgExpr(lhs) <:> cgExpr(rhs) <:> Sub
         case Times(lhs, rhs)      => cgExpr(lhs) <:> cgExpr(rhs) <:> Mul
@@ -107,17 +108,18 @@ object CodeGen extends Pipeline[(Program, SymbolTable), Module] {
         case LessThan(lhs, rhs)   => cgExpr(lhs) <:> cgExpr(rhs) <:> Lt_s
         case LessEquals(lhs, rhs) => cgExpr(lhs) <:> cgExpr(rhs) <:> Le_s
         case Equals(lhs, rhs)     => cgExpr(lhs) <:> cgExpr(rhs) <:> Eq
+        case AmyDiv(lhs, rhs)     => cgExpr(lhs) <:> cgExpr(rhs) <:> Div
 
-        case AmyDiv(lhs, rhs)        => cgExpr(lhs) <:> cgExpr(rhs) <:> Div
-        case AmyAnd(lhs, rhs)        => cgExpr(lhs) <:> cgExpr(rhs) <:> And
-        case AmyOr(lhs, rhs)         => cgExpr(lhs) <:> cgExpr(rhs) <:> Or
+        // Boolean binary operators
+        case AmyAnd(lhs, rhs)     => cgExpr(lhs) <:> If_i32 <:> cgExpr(rhs) <:> Else <:> Const(0) <:> End 
+        case AmyOr(lhs, rhs)      => cgExpr(lhs) <:> If_i32 <:> Const(1) <:> Else <:> cgExpr(rhs) <:> End 
 
         // Binary string operation
         case Concat(lhs, rhs)     => cgExpr(lhs) <:> cgExpr(rhs) <:> Call("String_concat")
 
         // Unary operators
-        case Not(e) => Const(0)  <:> cgExpr(e) <:> Sub
-        case Neg(e) => cgExpr(e) <:> Eqz
+        case Not(e) => cgExpr(e) <:> Eqz
+        case Neg(e) => Const(0) <:> cgExpr(e) <:> Sub
 
         // The ; operator
         case Sequence(e1, e2) => cgExpr(e1) <:> Drop <:> cgExpr(e2)
@@ -133,128 +135,111 @@ object CodeGen extends Pipeline[(Program, SymbolTable), Module] {
 
         // Represents a computational error; prints its message, then exits
         case Error(msg) => 
-          cgExpr(msg) <:> Call("Std_printString") <:> Unreachable  
+          mkString("Error: ") <:> cgExpr(msg) <:> Call("String_concat") <:>  Call("Std_printString") <:> Unreachable  
           
         // Match expression
         case Match(scrut, cases) => 
-          //End of the match is called EndMatch
-          //End of the pattern is called EndPat
-          def attemtAssignArguments(pats : List[Pattern], cmpIdx : Int): (Map[Identifier,Int], Code) = {
+
+          // Loads fields from address ptr+4*i to address ptr+4*n
+          def loadAndAssign(ptr : Int, i : Int, pats : List[Pattern]) : (Map[Identifier, Int], Code) = {
             pats match {
-              case x :: xs => xs match {
-                case y :: ys =>  
-                  val (asig, code) = attempAsignation(x, cmpIdx)
-                  val (restAsig, restCode) = attemtAssignArguments(xs, cmpIdx)
-                  (restAsig ++ asig, code <:> restCode)
-                case y => attempAsignation(x, cmpIdx)
-              }
+              case x :: xs => 
+
+                // Load field and try to assign it
+                val load = GetLocal(ptr) <:> Const(4*i) <:> Add <:> Load
+                val (asig, assign) = attempAsignation(x)
+
+                xs match {  
+                  // More than one field remaining
+                  case y :: ys =>  
+                    val (restAsig, restCode) = loadAndAssign(ptr, i+1, xs)
+                    (restAsig ++ asig, load <:> assign <:> restCode <:> And)
+                  
+                  // One field remaining
+                  case y => (asig, load <:> assign)
+                }
               case x => sys.error("Invalid parameter. Empty list give.")
             }
           }
-          // Loads fields from address ptr+4*i to address ptr+4*n
-          def loadFields(ptr : Int, i : Int, n : Int) : Code = {
-            if (i <= n) {
-              val load = GetLocal(ptr) <:> Const(i) <:> Const(4) <:> Mul <:> Add <:> Load
-              if(i < n) loadFields(ptr, i+1, n) <:> load else load
-            }else{
-              sys.error("No fields given.")
-            }
-          }
           // Creates the code of a pattern matching. Stores whether the match is successful in Locals(cmpIdx)
-          def attempAsignation(pat : Pattern, cmpIdx : Int) : (Map[Identifier, Int], Code) ={
-            val cmp_code = GetLocal(cmpIdx) <:> And <:> SetLocal(cmpIdx)
+          def attempAsignation(pat : Pattern) : (Map[Identifier, Int], Code) ={
             pat match {
-              // Wildcard, ignore the argument
-              case WildcardPattern() => (Map[Identifier, Int](), Drop)
-              // Literal, compare and update Local(cmpIdx)
-              case LiteralPattern(lit) => (Map[Identifier, Int](), cgExpr(lit) <:> Eq <:> cmp_code)
-              // Identifier, add to locals
+              
+              case WildcardPattern() => (Map[Identifier, Int](), Drop <:> Const(1))
+              
+              case LiteralPattern(lit) => (Map[Identifier, Int](), cgExpr(lit) <:> Eq)
+              
               case IdPattern(id) => 
                 val idx = lh.getFreshLocal()
-                (Map[Identifier, Int](id -> idx), SetLocal(idx) <:> reportStr("Stored.") <:> report)
-              // CaseClass, compare contructor index and subpatterns
+                (Map[Identifier, Int](id -> idx), SetLocal(idx) <:> Const(1))
+             
               case CaseClassPattern(constr, pats) =>
                 table.getConstructor(constr) getOrElse sys.error("Constructor not found") match { 
                   case ConstrSig(_, parent, index) => 
-                    // Store the pointer to the object (for field load)
+
+                    // Save pointer and constructor index check
                     val ptr = lh.getFreshLocal()
-                    // Comparison with the constructor index
-                    val checkCostr = GetLocal(ptr) <:> Load <:> Const(index) <:> Eq <:> cmp_code 
-                    // if there are no fields
-                    if (pats.isEmpty)
-                      (Map[Identifier, Int](), checkCostr)
-                    else // If there are fields
-                    {
+                    val checkConstr : Code = SetLocal(ptr) <:> GetLocal(ptr) <:> Load <:> Const(index) <:> Eq
+
+                    // No fields (Removed extra IfElse block in the example compiler)
+                    if (pats.isEmpty) 
+                      (Map[Identifier, Int](), checkConstr)
+                    else 
+                    { 
                       // Attempst to match the arguments
-                      val (moreLocals, code) = attemtAssignArguments(pats, cmpIdx)
-                      // Returns the result adding the constructor index check
-                      (moreLocals,  SetLocal(ptr) <:> loadFields(ptr, 1, pats.length) <:> code <:> checkCostr) // <:> reportStr("After Constr value: ") <:> reportVal(cmpIdx)
+                      val (moreLocals, paramCheck) = loadAndAssign(ptr, 1, pats)
+                      (moreLocals,  checkConstr <:> If_i32 <:> paramCheck <:> Else <:> Const(0) <:> End) 
                     }
                 }
                 
             }
           }
           // Creates the code of a matchcase
-          def codeMatchCase(indexSaved: Int, pat : MatchCase, indexResult : Int) : Code = {
+          def codeMatchCase(indexSaved: Int, pat : MatchCase) : Code = {
             pat match {
               case MatchCase(a, b) => 
-                // Index to store the pattern matching result (Boolean)
-                val cmpIdx = lh.getFreshLocal()
-                val (moreLocals, code) = attempAsignation(a, cmpIdx)
-                val extraIdx = lh.getFreshLocal()
+                // Gets the scrut and performs the pattern matching
+                val (moreLocals, code) = attempAsignation(a)
                 val resultCode : Code = cgExpr(b)(locals  ++ moreLocals, lh)
-                // Initialize the match
-                Block("EndPat") <:> GetLocal(indexSaved) <:> Const(1) <:> SetLocal(cmpIdx) <:> 
-                // Execute the match
-                code <:> 
-                // Get the result of the match
-                GetLocal(cmpIdx) <:>
-                // If un-successful jumpto next match case
-                If_void <:> Else <:> Br("EndPat") <:> End <:> 
-                // Execute the expresion
-                resultCode <:> SetLocal(indexResult) <:> Br("EndMatch") <:> End
+                GetLocal(indexSaved) <:> code <:> If_i32 <:> resultCode <:> Else
             }
           }
+
           // Concatenate all the match expresions (With the error at the end as default case)
-          def codeMatches(indexSaved: Int, cases : List[MatchCase], indexResult : Int) : Code = {
+          def codeMatches(indexSaved: Int, cases : List[MatchCase]) : Code = {
             cases match { 
-              case x :: xs => codeMatchCase(indexSaved, x, indexResult) <:> codeMatches(indexSaved, xs, indexResult)
-              case nil => mkString("Match error") <:> Call("Std_printString") <:> Unreachable 
+              case x :: xs => codeMatchCase(indexSaved, x) <:> codeMatches(indexSaved, xs) <:> End
+              case nil => mkString("Match error!") <:> Call("Std_printString") <:> Unreachable 
             }
           }
-          // Code ofthe scrut
-          val codeScrut = cgExpr(scrut)
-          // Where we have saved the scrut
-          val indexSaved = lh.getFreshLocal()
-          // Where the resultwill be saved
-          val indexResult = lh.getFreshLocal()
-          // Match cases
-          val codeMatches_ = codeMatches(indexSaved, cases, indexResult)
           
-          codeScrut <:> SetLocal(indexSaved) <:> Block("EndMatch") <:> codeMatches_ <:> End <:> GetLocal(indexResult)
+          val indexSaved = lh.getFreshLocal()
+          val codeMatches_ = codeMatches(indexSaved, cases)
+          val codeScrut = cgExpr(scrut)
+          
+          codeScrut <:> SetLocal(indexSaved) <:> codeMatches_ 
 
         // Function/constructor call
         case AmyCall(id, args) => 
-          // Evaluates the arguments in opposite order
+          // Evaluates the arguments and leaves them in the stack
           def concatArgs(args : List[Expr]) : Code = {
             args match {
-              case x :: y :: xs => concatArgs(y :: xs) <:> cgExpr(x) 
+              case x :: y :: xs =>  cgExpr(x) <:> concatArgs(y :: xs) 
               case x :: Nil => cgExpr(x) 
               case Nil => sys.error("No arguments given")
             }
           }
           // Performs n consecutive allocations
-          def storeFields(n : Int) : Code = {
-            if (n > 0) {
-              val incrMem = GetGlobal(memoryBoundary) <:> Const(4) <:> Add <:> SetGlobal(memoryBoundary)
-              val loc = lh.getFreshLocal()
-              val storeField =  SetLocal(loc) <:> GetGlobal(memoryBoundary) <:> GetLocal(loc) <:> Store <:> incrMem
-              if(n > 1) storeField <:> storeFields(n-1) else storeField
-            }else{
-              sys.error("No fields given.")
+          def storeFields(ptr : Int, i : Int, args : List[Expr]) : Code = 
+            args match {
+              case x :: xs =>
+                val store = GetLocal(ptr) <:> Const(i*4) <:> Add <:> cgExpr(x) <:> Store
+                xs match {
+                  case y :: ys => store <:> storeFields(ptr, i+1, xs) 
+                  case y => store
+                }
+              case xs => sys.error("No fields given.")
             }
-          }
-
 
           val funSig = table.getFunction(id) getOrElse (table.getConstructor(id) getOrElse sys.error("Non existent call identifier"))
 
@@ -264,18 +249,19 @@ object CodeGen extends Pipeline[(Program, SymbolTable), Module] {
               val call =  Call(s"${owner}_${id.toString}")
               if (args.isEmpty) call else concatArgs(args) <:> call
             case ConstrSig(_, parent, index) =>
-              val iniConstructor = 
               // Get pointer that will be returned
-              
               // Store the constructor index
-              GetGlobal(memoryBoundary) <:> Const(index) <:> Store <:> GetGlobal(memoryBoundary) <:> Const(4) <:> Add <:> SetGlobal(memoryBoundary)
               // Store the fields (Optional)
+              val ptr = lh.getFreshLocal()
               if (args.isEmpty)
-                 GetGlobal(memoryBoundary) <:> iniConstructor 
+                 GetGlobal(memoryBoundary) <:> SetLocal(ptr) <:> // Store pointer
+                 GetGlobal(memoryBoundary) <:> Const(4) <:> Add <:> SetGlobal(memoryBoundary) <:> // Increment memory boundary 
+                 GetLocal(ptr) <:> Const(index) <:> Store <:> // Store constructor index
+                 GetLocal(ptr)
               else {
-                val argCode = concatArgs(args)
-                val ptr = lh.getFreshLocal()
-                argCode <:> GetGlobal(memoryBoundary) <:> SetLocal(ptr) <:> iniConstructor <:> storeFields(args.length) <:> GetLocal(ptr)
+                GetGlobal(memoryBoundary) <:> SetLocal(ptr) <:> // Set pointer
+                GetGlobal(memoryBoundary) <:> Const(args.length * 4 + 4) <:> Add <:> SetGlobal(memoryBoundary)  <:>  // Increment memory boundary
+                GetLocal(ptr) <:> Const(index) <:> Store <:> storeFields(ptr, 1, args) <:> GetLocal(ptr) // Store fields
               }
           }
           

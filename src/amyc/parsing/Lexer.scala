@@ -58,7 +58,7 @@ object Lexer extends Pipeline[List[File], Iterator[Token]]
 
     // Delimiters and whitespace
     // White spaces
-    many1(oneOf(" \n\r")) |>  { (cs, range) => SpaceToken().setPos(range._1) },
+    many1(oneOf(" \n\r\t")) |>  { (cs, range) => SpaceToken().setPos(range._1) },
     // Delimiters .,:;(){}[]= and =>
     word("=>") | oneOf(".,:;(){}[]=") |>  { (cs, range) => DelimiterToken(cs.mkString).setPos(range._1) },
 

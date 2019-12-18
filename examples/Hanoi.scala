@@ -1,5 +1,5 @@
 object Hanoi {
-	
+  
   def solve(n : Int) : Int = {
     if (n < 1) { 
       error("can't solve Hanoi for less than 1 plate")
