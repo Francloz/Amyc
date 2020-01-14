@@ -54,6 +54,7 @@ trait TreeModule {
   case class Or(lhs: Expr, rhs: Expr) extends Expr
   case class Equals(lhs: Expr, rhs: Expr) extends Expr
   case class Concat(lhs: Expr, rhs: Expr) extends Expr
+  case class Asignation(v: Name, rhs: Expr) extends Expr
 
   // Unary operators
   case class Not(e: Expr) extends Expr
@@ -64,7 +65,7 @@ trait TreeModule {
   // The ; operator
   case class Sequence(e1: Expr, e2: Expr) extends Expr
   // Local variable definition
-  case class Let(df: ParamDef, value: Expr, body: Expr) extends Expr
+  case class Let(df: ParamDef, value: Expr, body: Expr, mutable : Boolean) extends Expr
   // If-then-else
   case class Ite(cond: Expr, thenn: Expr, elze: Expr) extends Expr
   // Pattern matching
@@ -111,7 +112,7 @@ trait TreeModule {
   case class ClassType(qname: QualifiedName) extends Type {
     override def toString: String = printer.printQName(qname)(false).print
   }
-
+  
   // A wrapper for types that is also a Tree (i.e. has a position)
   case class TypeTree(tpe: Type) extends Tree
 

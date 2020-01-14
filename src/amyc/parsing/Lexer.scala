@@ -23,7 +23,7 @@ object Lexer extends Pipeline[List[File], Iterator[Token]]
     word("abstract") | word("case") | word("class") |
     word("def") | word("else") | word("extends") |
     word("if") | word("match") | word("object") |
-    word("val") | word("error") | word("_")
+    word("val") | word("var") | word("error") | word("_")
       |> { (cs, range) => KeywordToken(cs.mkString).setPos(range._1) },
 
     // Primitive type names

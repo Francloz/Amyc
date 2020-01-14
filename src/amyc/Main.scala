@@ -16,12 +16,7 @@ object Main extends MainHelpers {
   def main(args: Array[String]): Unit = {
     val ctx = parseArgs(args)
     val pipeline =
-      Lexer andThen
-      Parser andThen
-      NameAnalyzer andThen
-      TypeChecker andThen
-      CodeGen andThen
-      CodePrinter
+      Lexer andThen Parser andThen NameAnalyzer andThen TypeChecker andThen ConstantPropagation andThen CodeGen andThen CodePrinter
 
     val files = ctx.files.map(new File(_))
 

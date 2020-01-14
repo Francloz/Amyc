@@ -39,6 +39,7 @@ object NameAnalyzer extends Pipeline[N.Program, (S.Program, SymbolTable)] {
         case N.StringType => S.StringType
         case N.BooleanType => S.BooleanType
         case N.UnitType => S.UnitType
+
         case N.ClassType(QualifiedName(mod,id)) => 
           S.ClassType(table.getType(mod getOrElse module, id) match {
             case Some(x) => x
@@ -209,30 +210,6 @@ object NameAnalyzer extends Pipeline[N.Program, (S.Program, SymbolTable)] {
                      (implicit module: String, names: (Map[String, Identifier], Map[String, Identifier])): S.Expr = {
       val (params, locals) = names
       
-      /************************************************************** 
-      * EXTRA FUNCTIONALITY
-      * How to allow redefinitions of locals inside nested expressions    
-      *
-      * So this works
-      * val i = 3;
-      * (val i = i + 2; i) + 2
-      * 
-      * And this doesnt:
-      * val i = 3;
-      * val i = i + 2;
-      * i + 2
-      *
-      * First, we will change names = (params, locals) to
-      * names = (shadowable, non_shadowable)
-      *
-      * Then we add the following to the function transformExpr
-      * val turnover = (shadowable ++ non_shadowable,  Map[String, Identifier]())
-      * All transformExpr calls except for Sequences' right hand and 
-      * Lets' bodies pass as implicit parameter 'names' turnover 
-      * 
-      * This functionality will probably be added in following projects
-      *
-      ***************************************************************/
       val res = expr match {
         case N.Match(scrut, cases) =>
           // Returns a transformed pattern along with all bindings
@@ -300,7 +277,9 @@ object NameAnalyzer extends Pipeline[N.Program, (S.Program, SymbolTable)] {
         case N.Variable(name) => 
           if(!locals.exists(_._1 == name) && !params.exists(_._1 == name))
             fatal(s"Variable $name not found", expr.position)
-          S.Variable(if (!locals.exists(_._1 == name)) params(name) else locals(name))
+
+          val id = if (!locals.exists(_._1 == name)) params(name) else locals(name)
+          S.Variable(id)
 
         // Literals
         case N.IntLiteral(value) => S.IntLiteral(value)
@@ -329,9 +308,10 @@ object NameAnalyzer extends Pipeline[N.Program, (S.Program, SymbolTable)] {
         case N.Sequence(e1, e2) => S.Sequence(transformExpr(e1), transformExpr(e2))
         case N.Ite(cond, thenn, elze) => S.Ite(transformExpr(cond), transformExpr(thenn), transformExpr(elze))
         case N.Error(msg) => S.Error(transformExpr(msg))
-        
+        case N.Asignation(name, value) => S.Asignation(locals(name), transformExpr(value))
+
         // Expressions that modify the name mapping
-        case N.Let(N.ParamDef(name, tt), value, body) => 
+        case N.Let(N.ParamDef(name, tt), value, body, mutable) => 
           val fresh_id = Identifier.fresh(name);
           
           // Check if the variable already exists
@@ -343,8 +323,8 @@ object NameAnalyzer extends Pipeline[N.Program, (S.Program, SymbolTable)] {
           // Continue analyzing and make sure you shadow the redefined parameter if necessary
           S.Let(S.ParamDef(fresh_id, S.TypeTree(toSymbolicType(tt.tpe, module, expr))), 
                 transformExpr(value), 
-                transformExpr(body)(module, (locals, params.filter(_._1 != name) ++ Map(name -> fresh_id)))
-                )
+                transformExpr(body)(module, (params.filter(_._1 != name), locals ++ Map(name -> fresh_id))),
+                mutable)
         
         case N.Call(qname: QualifiedName, args: List[Expr]) => 
           // Get the funcion identifier

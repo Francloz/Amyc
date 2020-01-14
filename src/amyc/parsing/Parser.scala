@@ -1,77 +1,3 @@
-  /* --------------------------------------------IF'S AND MATCHES--------------------------------------------------
-
-    Ive provided if's the possibility of being operands. This is not present in Amy.
-
-    As in the example compiler, a match expression cannot be a an operand.
-
-    Ex. 
-    3 match {
-      case 3 => 3
-    } + 3 match {
-      case 6 => 6
-    }
-
-    In the other file called ParserModified, I attempted to solve this, but I found an annoying 
-    bug in Scallion I could not get past.
-
-    In that file I permited 
-    
-    matchExpr := binOp ~ [moreMatches | ?] 
-    moreMatches := match op binOp [moreMatches | ?]
-
-    By searching inside the binOp tree where the matchExpression should be to preserve operator 
-    priority, and insert it there.
-
-    def morePriority(op1 : String, op2: String) = {
-      val opList = List("*","/","%","+","-","++","<","<=","==","&&","||");
-      opList.indexOf(op1) < opList.indexOf(op2)
-    }
-    def getOp(l : Expr, op : String, r : Expr) : Expr = {
-        (l,op,r) match {
-          case (l, "+",  r) => Plus(l, r)
-          case (l, "-",  r) => Minus(l, r)
-          case (l, "/",  r) => Div(l, r)
-          case (l, "%",  r) => Mod(l, r)
-          case (l, "*",  r) => Times(l, r)
-          case (l, "<",  r) => LessThan(l, r)
-          case (l, "<=", r) => LessEquals(l, r)
-          case (l, "&&", r) => And(l, r)
-          case (l, "||", r) => Or(l, r)
-          case (l, "++", r) => Concat(l, r)
-          case (l, _, r) => Equals(l, r) // Wildcard to avoid warning
-        }
-      }
-    // O(log(n)) n length of the string input
-    def fixPriority(matchExpr : Expr, op : String, binOp : Expr) : Expr = {
-      binOp match {
-        case Plus(l, r) =>       if (morePriority(op, "+"))  Plus(fixPriority(matchExpr, op, l), r)      else getOp(matchExpr, op, binOp)  
-        case Minus(l, r) =>      if (morePriority(op, "-"))  Minus(fixPriority(matchExpr, op, l), r)     else getOp(matchExpr, op, binOp)  
-        case Div(l, r) =>        if (morePriority(op, "/"))  Div(fixPriority(matchExpr, op, l), r)       else getOp(matchExpr, op, binOp)  
-        case Mod(l, r) =>        if (morePriority(op, "%"))  Mod(fixPriority(matchExpr, op, l), r)       else getOp(matchExpr, op, binOp)  
-        case Times(l, r) =>      if (morePriority(op, "*"))  Times(fixPriority(matchExpr, op, l), r)     else getOp(matchExpr, op, binOp)  
-        case LessThan(l, r) =>   if (morePriority(op, "<"))  LessThan(fixPriority(matchExpr, op, l), r)  else getOp(matchExpr, op, binOp)  
-        case LessEquals(l, r) => if (morePriority(op, "<=")) LessEquals(fixPriority(matchExpr, op, l), r)else getOp(matchExpr, op, binOp)  
-        case And(l, r) =>        if (morePriority(op, "&&")) And(fixPriority(matchExpr, op, l), r)       else getOp(matchExpr, op, binOp)  
-        case Or(l, r) =>         if (morePriority(op, "||")) Or(fixPriority(matchExpr, op, l), r)        else getOp(matchExpr, op, binOp)  
-        case Concat(l, r) =>     if (morePriority(op, "++")) Concat(fixPriority(matchExpr, op, l), r)    else getOp(matchExpr, op, binOp)  
-        case Equals(l, r) =>     if (morePriority(op, "==")) Equals(fixPriority(matchExpr, op, l), r)    else getOp(matchExpr, op, binOp)
-        case _ => getOp(matchExpr, op, binOp)
-      }
-    }
-    lazy val anyOp : Syntax[String] = op("*")| op("/")| op("%")| op("+")| op("-")| op("++")| op("<")| op("<=")| op("==")| op("&&")| op("||")
-    lazy val matchExpr : Syntax[Expr] = recursive {
-      (binOp ~ matchExpression ~ (anyOp ~ matchExpr).opt ~ manyMatches.opt).map {
-        case value ~ matches ~ None ~ None => Match(value, matches) 
-        case value ~ matches ~ Some(op ~ matchExpr) ~ None => matchExpr match {
-          case Match(expr, matches) => Match(fixPriority(Match(value, matches), op, expr), matches)
-        }
-        case value ~ matches ~ None ~ Some(othermatches) => getMatchExpr(Match(value, matches), othermatches)
-        case value ~ matches ~ Some(op ~ matchExpr) ~ Some(othermatches) => matchExpr match {
-          case Match(expr, matches) => getMatchExpr(Match(fixPriority(Match(value, matches), op, expr), matches), othermatches)
-        }
-      }
-    }
-  -----------------------------------------------------------------------------------------------------------------*/
   package amyc
   package parsing
   
@@ -176,10 +102,11 @@
     lazy val expr: Syntax[Expr] = recursive {
       defExpr | seqExpr
     }
-  
     
-    lazy val defExpr: Syntax[Expr] = (kw("val") ~ identifier ~ ":".skip ~ typeTree ~ "=".skip ~ value ~ ";".skip ~ expr).map {
-      case kw ~ id ~ tt ~ value ~body => Let(ParamDef(id, tt), value, body).setPos(kw.position) 
+    lazy val defExpr: Syntax[Expr] = ((kw("val") | kw("var")) ~ identifier ~ ":".skip ~ typeTree ~ "=".skip ~ value ~ ";".skip ~ expr).map {
+      case KeywordToken("val") ~ id ~ tt ~ value ~ body => Let(ParamDef(id, tt), value, body, false)//.setPos(pos) 
+      case KeywordToken("var") ~ id ~ tt ~ value ~ body => Let(ParamDef(id, tt), value, body, true)//.setPos(pos) 
+      case default => println(default); sys.error("what")
     } 
     lazy val seqExpr: Syntax[Expr] = (value ~ (";".skip ~ expr).opt).map {
       case value ~ None => value 
@@ -213,7 +140,7 @@
       }
     
     lazy val oneOrMoreCases :  Syntax[List[MatchCase]] = recursive {
-      (kw("case").skip ~ pattern ~ "=>".skip ~ expr  ~ (oneOrMoreCases).opt).map {
+      (kw("case").skip ~ pattern ~ "=>".skip ~ value  ~ (oneOrMoreCases).opt).map {
         case p ~ expr ~ Some(list) => MatchCase(p, expr).setPos(p.position) :: list
         case p ~ expr ~ None => List(MatchCase(p, expr).setPos(p.position))
       }
@@ -253,10 +180,10 @@
     // A literal expression.
     lazy val literal: Syntax[Literal[_]] = accept(LiteralKind) {
         case a => a match {
-        case tk@IntLitToken(value) => IntLiteral(value).setPos(a.position)
-        case tk@StringLitToken(value) => StringLiteral(value).setPos(a.position)
-        case tk@BoolLitToken(value) => BooleanLiteral(value).setPos(a.position)   
-      }
+          case tk@IntLitToken(value) => IntLiteral(value).setPos(a.position)
+          case tk@StringLitToken(value) => StringLiteral(value).setPos(a.position)
+          case tk@BoolLitToken(value) => BooleanLiteral(value).setPos(a.position)   
+        }
     }
   
     lazy val unitLit : Syntax[Literal[_]] = 
@@ -278,15 +205,42 @@
       case (id, pos) ~ Some(None ~ params) => CaseClassPattern(QualifiedName(None, id), params).setPos(pos)
       case (id, pos) ~ None => IdPattern(id).setPos(pos)
     }
-    
-  
+
     // Basic expressions
-    lazy val simpleExpr: Syntax[Expr] = literal.up[Expr] | variableOrCall | nestedOrUnit | error | ifExpr
+    lazy val simpleExpr: Syntax[Expr] = 
+      literal.up[Expr] | variableOrCall | 
+      nestedOrUnit | error | ifExpr
     
-    lazy val variableOrCall: Syntax[Expr] = (identifierPos ~ ((".".skip ~ identifier).opt ~ "(".skip ~ repsep(expr, ",").map(_.toList) ~ ")".skip).opt).map {
-      case (id, pos) ~ None => Variable(id).setPos(pos)
-      case (module,pos) ~ Some(Some(id) ~ parameters) => Call(QualifiedName(Some(module), id), parameters).setPos(pos)
-      case (id,pos) ~ Some(None ~ parameters) => Call(QualifiedName(None, id), parameters).setPos(pos)
+    case class VarExpr(id : Option[Name], asig : Option[Expr], params : Option[List[Expr]])
+
+    lazy val restCall : Syntax[VarExpr] = 
+      ((".".skip ~ identifier).opt ~ "(".skip ~ repsep(value, ",").map(_.toList) ~ ")".skip).map{
+        case Some(id) ~ params => VarExpr(Some(id), None, Some(params))
+        case None ~ params => VarExpr(None, None, Some(params))
+      }
+
+    // We would want the assigned value to be a grammar 'value', but it causes java's garbage collector to go crazy
+    // For that reaason I have decided to put simpleExpr instead, as it has the same functionality using the nested 
+    // expresion
+    // 
+    // Posible options for the expression of the assigned value:
+    // value (GC Error) -> binOp (GC Error) -> factor (Correct) -> simpleExpr (Correct) 
+    //
+    // I believe it creates too many temporal objects while creating the grammar. Using the option Recursive doesn't 
+    // solve it. Adding a terminal to the expression at the end solves it, but having double semi-colons is undesirable.
+    lazy val restAsignation : Syntax[VarExpr] =
+      ("=".skip ~ simpleExpr).map {
+        case e => VarExpr(None, Some(e), None)
+      }
+      
+    lazy val variableOrCall: Syntax[Expr] = recursive {
+      (identifierPos ~ (restCall | restAsignation).opt).map {
+        case (id, pos)    ~ None => Variable(id).setPos(pos)
+        case (module,pos) ~ Some(VarExpr(Some(id), None, Some(parameters))) => Call(QualifiedName(Some(module), id), parameters).setPos(pos)
+        case (id,pos)     ~ Some(VarExpr(None, None, Some(parameters))) => Call(QualifiedName(None, id), parameters).setPos(pos)
+        case (id,pos)     ~ Some(VarExpr(None, Some(v), None)) => Asignation(id, v).setPos(pos)
+        case (is, pos) ~ _ => sys.error("Unexpected error found during parsing.")
+      }
     }
     
     lazy val nestedOrUnit: Syntax[Expr] = ("(" ~ expr.opt ~ ")".skip).map {
@@ -311,18 +265,10 @@
     lazy val testing: Syntax[_] = expr ~<~ eof
     override def run(ctx: Context)(tokens: Iterator[Token]): Program = {
       import ctx.reporter._
-      //val grm :  Syntax[_] = testing;
-  
-      if (!checkLL1(program)) {
+      
+      if (!checkLL1(program))
         ctx.reporter.fatal("Program grammar is not LL1!")
-      }
-  
-      // println(grm(tokens) match {
-      //   case Parsed(result, rest) => result
-      //   case UnexpectedEnd(rest) => fatal("Unexpected end of input.")
-      //   case UnexpectedToken(token, rest) => fatal("Unexpected token: " + token + ", possible kinds: " + rest.first.map(_.toString).mkString(", "))
-      // });
-  
+
       program(tokens) match {
         case Parsed(result, rest) => result
         case UnexpectedEnd(rest) => fatal("Unexpected end of input.")

@@ -102,7 +102,7 @@ trait Printer {
         } else {
           main
         }
-      case Let(df, value, body) =>
+      case Let(df, value, body, _) =>
         val main = Stacked(
           "val " <:> rec(df) <:> " =",
           Indented(rec(value)) <:> ";",
@@ -117,6 +117,9 @@ trait Printer {
         } else {
           main
         }
+      case Asignation(name, expr) =>
+        name <:> " = " <:> rec(expr)
+
       case Ite(cond, thenn, elze) =>
         Stacked(
           "(if(" <:> rec(cond) <:> ") {",

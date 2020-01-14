@@ -29,7 +29,7 @@ object TypeChecker extends Pipeline[(Program, SymbolTable), (Program, SymbolTabl
     // The environment `env` contains all currently available bindings (you will have to
     //  extend these, e.g., to account for local variables).
     // Returns a list of constraints among types. These will later be solved via unification.
-    def genConstraints(e: Expr, expected: Type)(implicit env: Map[Identifier, Type]): List[Constraint] = {
+    def genConstraints(e: Expr, expected: Type)(implicit env: Map[Identifier, (Type, Boolean)]): List[Constraint] = {
       
       // This helper returns a list of a single constraint recording the type
       //  that we found (or generated) for the current expression `e`
@@ -43,7 +43,7 @@ object TypeChecker extends Pipeline[(Program, SymbolTable), (Program, SymbolTabl
       e match {
         
         // Variables
-        case  Variable(name)    => topLevelConstraint(env(name)) 
+        case  Variable(name)    => topLevelConstraint(env(name)._1) 
         
         // Literals
         case  IntLiteral(_)     => topLevelConstraint(IntType)
@@ -67,17 +67,17 @@ object TypeChecker extends Pipeline[(Program, SymbolTable), (Program, SymbolTabl
         case  Not(e) => topLevelConstraint(BooleanType) ++ genConstraints(e, BooleanType)
         case  Neg(e) => topLevelConstraint(IntType)     ++ genConstraints(e, IntType)
 
-        // Function/constructor call
-        case  Call(id, args) => 
-            (table.getConstructor(id)  getOrElse (table.getFunction(id) getOrElse sys.error(s"${id} not found in the table."))) match {
-                case sig => 
-                  Constraint(sig.retType, expected, e.position) :: args.zip(sig.argTypes).flatMap{ case (e, t) => genConstraints(e, t) }.toList
-                }
         // The ; operator
         case  Sequence(e1, e2) => genConstraints(e1, TypeVariable.fresh()) ++ genConstraints(e2, expected)
+
+        // The = operator
+        case  Asignation(name, value) => 
+          if (!env(name)._2)
+            error(s"Attempted assignation to immutable variable $name.", e.position)
+          genConstraints(value, env(name)._1)
         
         // Local variable definition
-        case  Let(df, value, body) => genConstraints(body, expected)(Map(df.name -> df.tt.tpe) ++ env) ++ genConstraints(value, df.tt.tpe)
+        case  Let(df, value, body, mutable) => genConstraints(body, expected)(Map(df.name -> (df.tt.tpe, mutable)) ++ env) ++ genConstraints(value, df.tt.tpe)
         
         // If-then-else
         case  Ite(cond, thenn, elze) => genConstraints(cond, BooleanType) ++ genConstraints(thenn, expected) ++ genConstraints(elze, expected)
@@ -89,20 +89,27 @@ object TypeChecker extends Pipeline[(Program, SymbolTable), (Program, SymbolTabl
           val tVar = TypeVariable.fresh();
           genConstraints(lhs, tVar) ++ genConstraints(rhs, tVar)
         
+          // Function/constructor call
+        case  Call(id, args) => 
+          (table.getConstructor(id)  getOrElse (table.getFunction(id) getOrElse sys.error(s"${id} not found in the table."))) match {
+              case sig => 
+                Constraint(sig.retType, expected, e.position) :: args.zip(sig.argTypes).flatMap{ case (e, t) => genConstraints(e, t) }.toList
+              }
+              
         case Match(scrut, cases) =>
           // Returns additional constraints from within the pattern with all bindings
           // from identifiers to types for names bound in the pattern.
           // (This is analogous to `transformPattern` in NameAnalyzer.)
           def handlePattern(pat: Pattern, scrutExpected: Type):
-            (List[Constraint], Map[Identifier, Type]) =
+            (List[Constraint], Map[Identifier, (Type, Boolean)]) =
           {
             // Litteral pattern handler 
             def handleLiteralPattern(t : Type) = 
-              (List(Constraint(t, scrutExpected,  pat.position)), Map[Identifier, Type]())
+              (List(Constraint(t, scrutExpected,  pat.position)), Map[Identifier, (Type, Boolean)]())
 
             pat match {
-              case WildcardPattern() =>       (List[Constraint](), Map[Identifier, Type]())
-              case IdPattern(id) =>           (List(),             Map(id -> scrutExpected))
+              case WildcardPattern() =>       (List[Constraint](), Map())
+              case IdPattern(id) =>           (List(),             Map(id -> (scrutExpected, false)))
               case LiteralPattern(lit) =>
                 lit match  {
                   case IntLiteral(_)      =>  handleLiteralPattern(IntType)
@@ -210,8 +217,7 @@ object TypeChecker extends Pipeline[(Program, SymbolTable), (Program, SymbolTabl
     program.modules.foreach { mod =>
       // Put function parameters to the symbol table, then typecheck them against the return type
       mod.defs.collect { case FunDef(_, params, retType, body) =>
-        val env = params.map{ case ParamDef(name, tt) => name -> tt.tpe }.toMap
-
+        val env = params.map{ case ParamDef(name, tt) => name -> (tt.tpe,false) }.toMap
         solveConstraints(genConstraints(body, retType.tpe)(env))
       }
 

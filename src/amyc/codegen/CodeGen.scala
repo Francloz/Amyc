@@ -124,8 +124,12 @@ object CodeGen extends Pipeline[(Program, SymbolTable), Module] {
         // The ; operator
         case Sequence(e1, e2) => cgExpr(e1) <:> Drop <:> cgExpr(e2)
         
+        // Asignation          
+        case Asignation(name, value) =>
+          cgExpr(value) <:> SetLocal(locals(name)) <:> GetLocal(locals(name))
+          
         // Local variable definition
-        case Let(df, value, body) => 
+        case Let(df, value, body, _) => 
           val ptr = lh.getFreshLocal();
           cgExpr(value) <:>  SetLocal(ptr) <:>  cgExpr(body)(locals + (df.name -> ptr), lh)
         
